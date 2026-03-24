@@ -20,6 +20,7 @@ executable eocia-haskell
     import:           warnings
     main-is:          Main.hs
     other-modules:    Pre
+                    , Lang
     default-extensions: BlockArguments
                       , OverloadedRecordDot
                       , OverloadedRecordUpdate
@@ -32,5 +33,7 @@ executable eocia-haskell
                       , NoImplicitPrelude
     build-depends:    base ^>=4.21.0.0
                     , effectful
+                    , text
+                    , megaparsec
     hs-source-dirs:   app
     default-language: GHC2024
