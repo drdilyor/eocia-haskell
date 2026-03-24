@@ -17,7 +17,6 @@ common common-settings
     ghc-options: -Wall -fplugin=Effectful.Plugin
     default-extensions: BlockArguments
                       , OverloadedRecordDot
-                      , OverloadedRecordUpdate
                       , RecordWildCards
                       , OverloadedStrings
                       , GADTs
@@ -32,6 +31,7 @@ common common-settings
                     , text
                     , megaparsec
                     , recursion-schemes
+                    , unordered-containers
     default-language: GHC2024
 
 library
