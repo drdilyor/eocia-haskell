@@ -21,6 +21,7 @@ executable eocia-haskell
     main-is:          Main.hs
     other-modules:    Pre
                     , Lang
+                    , Effects.Lio
     default-extensions: BlockArguments
                       , OverloadedRecordDot
                       , OverloadedRecordUpdate
@@ -32,8 +33,11 @@ executable eocia-haskell
                       , ViewPatterns
                       , NoImplicitPrelude
     build-depends:    base ^>=4.21.0.0
-                    , effectful
+                    , effectful-core
+                    , effectful-plugin
+                    , effectful-th
                     , text
                     , megaparsec
     hs-source-dirs:   app
     default-language: GHC2024
+    ghc-options:      -fplugin=Effectful.Plugin
