@@ -1,4 +1,5 @@
 module Main (main) where
+
 import Pre
 
 main :: IO ()

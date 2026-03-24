@@ -1,7 +1,7 @@
 module Lang where
 
-import Pre
 import Effects.Lio
+import Pre
 
 newtype L = Module [Stmt]
 
@@ -41,7 +41,8 @@ interpExp :: (Lio :> es, Error InterpError :> es) => Exp -> Eff es Int
 interpExp (Constant x) = pure x
 interpExp (UnaryOp op e) = interpUnaryOp op <$> interpExp e
 interpExp (BinOp op e1 e2) = interpBinOp op <$> interpExp e1 <*> interpExp e2
-interpExp InputInt = lioInputLine >>= \case
+interpExp InputInt =
+  lioInputLine >>= \case
     (readMaybe . unpack -> Just x) -> pure x
     s -> throwError . InvalidInput $ "couldn't parse " <> show s
 

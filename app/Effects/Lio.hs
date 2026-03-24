@@ -1,12 +1,13 @@
 {-# LANGUAGE TemplateHaskell #-}
-module Effects.Lio
- ( Lio,
-   lioInputLine,
-   lioPrintLine,
-   runLioIO,
-   runLioPure,
-   LioError(..),
- )where
+
+module Effects.Lio (
+  Lio,
+  lioInputLine,
+  lioPrintLine,
+  runLioIO,
+  runLioPure,
+  LioError (..),
+) where
 
 import Effectful.State.Static.Local
 import Effectful.TH
