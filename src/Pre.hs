@@ -5,6 +5,9 @@ module Pre (
   module Data.Monoid,
   module Data.Function,
   module Data.Functor,
+  module Data.Functor.Base,
+  module Data.Functor.Foldable,
+  module Data.Functor.Foldable.TH,
   module Control.Applicative,
   module Control.Monad,
   module Control.Arrow,
@@ -23,6 +26,9 @@ import Control.Arrow
 import Control.Monad
 import Data.Function
 import Data.Functor hiding (unzip)
+import Data.Functor.Base
+import Data.Functor.Foldable
+import Data.Functor.Foldable.TH (makeBaseFunctor)
 import Data.List
 import Data.Maybe
 import Data.Monoid

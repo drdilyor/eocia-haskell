@@ -1,9 +1,12 @@
+{-# LANGUAGE TemplateHaskell #-}
+
 module Lang where
 
 import Effects.Lio
 import Pre
 
 newtype L = Module [Stmt]
+  deriving (Eq, Show, Read)
 
 data Stmt
   = Print Exp
@@ -30,6 +33,10 @@ newtype InterpError
   = InvalidInput Text
   deriving (Eq, Show)
 
+makeBaseFunctor ''L
+makeBaseFunctor ''Stmt
+makeBaseFunctor ''Exp
+
 interpL :: (Lio :> es, Error InterpError :> es) => L -> Eff es ()
 interpL (Module ss) = mapM_ interpStmt ss
 
@@ -37,14 +44,15 @@ interpStmt :: (Lio :> es, Error InterpError :> es) => Stmt -> Eff es ()
 interpStmt (Print e) = lioPrintLine . show =<< interpExp e
 interpStmt (Expr e) = void $ interpExp e
 
-interpExp :: (Lio :> es, Error InterpError :> es) => Exp -> Eff es Int
-interpExp (Constant x) = pure x
-interpExp (UnaryOp op e) = interpUnaryOp op <$> interpExp e
-interpExp (BinOp op e1 e2) = interpBinOp op <$> interpExp e1 <*> interpExp e2
-interpExp InputInt =
-  lioInputLine >>= \case
-    (readMaybe . unpack -> Just x) -> pure x
-    s -> throwError . InvalidInput $ "couldn't parse " <> show s
+interpExp :: forall es. (Lio :> es, Error InterpError :> es) => Exp -> Eff es Int
+interpExp = cata \case
+  (ConstantF x) -> pure x
+  (UnaryOpF op x) -> interpUnaryOp op <$> x
+  (BinOpF op x y) -> interpBinOp op <$> x <*> y
+  InputIntF ->
+    lioInputLine >>= \case
+      (readMaybe . unpack -> Just x) -> pure x
+      s -> throwError . InvalidInput $ "couldn't parse " <> show s
 
 interpUnaryOp :: UnaryOp -> Int -> Int
 interpUnaryOp USub = negate
@@ -58,12 +66,13 @@ peL (Module ss) = Module (map peStmt ss)
 
 peStmt :: Stmt -> Stmt
 peStmt (Print e) = Print (peExp e)
-peStmt (Expr e) = Print (peExp e)
+peStmt (Expr e) = Expr (peExp e)
 
 peExp :: Exp -> Exp
-peExp (Constant e) = Constant e
-peExp InputInt = InputInt
-peExp (UnaryOp op (peExp -> Constant x)) = Constant $ interpUnaryOp op x
-peExp (UnaryOp op (peExp -> e)) = UnaryOp op e
-peExp (BinOp op (peExp -> Constant x) (peExp -> Constant y)) = Constant $ interpBinOp op x y
-peExp (BinOp op (peExp -> e1) (peExp -> e2)) = BinOp op e1 e2
+peExp = cata \case
+  (ConstantF x) -> Constant x
+  InputIntF -> InputInt
+  (UnaryOpF op (Constant x)) -> Constant $ interpUnaryOp op x
+  (UnaryOpF op e) -> UnaryOp op e
+  (BinOpF op (Constant x) (Constant y)) -> Constant $ interpBinOp op x y
+  (BinOpF op e1 e2) -> BinOp op e1 e2
