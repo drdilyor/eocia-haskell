@@ -1,3 +1,4 @@
+{- HLINT ignore "Evaluate" -}
 module Pipeline where
 
 import Data.HashMap.Strict qualified as Map
@@ -11,6 +12,8 @@ msbind s x j = flip cata s \case
   MExprF e -> MLet x e j
   s' -> embed s'
 
+-- >>> msbind (MExpr (MBinOp Add (Lit 1) (Lit 2))) "x" (MExpr (MBinOp Add "x" (Lit 3)))
+-- MLet "x" (MBinOp Add (Lit 1) (Lit 2)) (MExpr (MBinOp Add (Name "x") (Lit 3)))
 removeComplexOperands :: forall es. (Gensym :> es) => L -> Eff es ML
 removeComplexOperands (Module ss) = MModule <$> rcoStmt ss
  where
@@ -134,6 +137,8 @@ assignHomes asmvar = mdo
   instruction (Subq a b) = Subq <$> argument a <*> argument b
   instruction (Negq a) = Negq <$> argument a
   instruction (Callq x) = pure $ Callq x
+  instruction (Pushq a) = Pushq <$> argument a
+  instruction (Popq a) = Popq <$> argument a
   instruction Retq = pure Retq
 
   argument :: Arg a Avar -> Eff (State StackFrame : es) (Arg a Aint)
@@ -163,4 +168,6 @@ patchInstructions =
         Subq a b -> patch Subq a b
         Callq x -> [Callq x]
         Negq a -> [Negq a]
+        Pushq a -> [Pushq a]
+        Popq a -> [Popq a]
         Retq -> [Retq]

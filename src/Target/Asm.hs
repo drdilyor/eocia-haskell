@@ -2,6 +2,7 @@ module Target.Asm where
 
 import Pre hiding (show)
 import Data.Kind
+import Data.Ix
 
 data Argtype = Src | Dst deriving (Eq, Show, Read)
 data Vartype = Avar | Aint deriving (Eq, Show, Read)
@@ -13,6 +14,8 @@ data AsmB v
   | Subq  (Arg Dst v) (Arg Src v)
   | Negq  (Arg Dst v)
   | Movq  (Arg Dst v) (Arg Src v)
+  | Pushq (Arg Dst v)
+  | Popq  (Arg Dst v)
   | Callq Text
   | Retq
   deriving (Eq, Show)
@@ -49,7 +52,23 @@ data Reg
   | R13
   | R14
   | R15
-  deriving (Eq, Show, Read)
+  deriving (Eq, Show, Read, Enum, Ord, Ix)
+
+rax, rsp, rbp, rbx, rsi, rdi, r8, r9, r10, r11, r12, r13, r14, r15 :: Arg a v
+rax = Reg Rax
+rsp = Reg Rsp
+rbp = Reg Rbp
+rbx = Reg Rbx
+rsi = Reg Rsi
+rdi = Reg Rdi
+r8 = Reg R8
+r9 = Reg R9
+r10 = Reg R10
+r11 = Reg R11
+r12 = Reg R12
+r13 = Reg R13
+r14 = Reg R14
+r15 = Reg R15
 
 instance Read (Arg Src Aint) where
   readPrec = parens $ choice

@@ -46,13 +46,25 @@ interpTests =
   testGroup
     "interpTests"
     [ testCase "basic arithmetic" do
-        runInterpSimple (Module (Expr (BinOp Add (lint 1) (lint 2))))
+        ( runInterpSimple
+            . Module
+            $ Expr (BinOp Add (lint 1) (lint 2))
+          )
           @?= Right 3
     , testCase "variables work" do
-        runInterpSimple (Module (Let "x" (lint 1) (Expr (BinOp Add "x" (lint 2)))))
+        ( runInterpSimple
+            . Module
+            . Let "x" (lint 1)
+            $ Expr (BinOp Add "x" (lint 2))
+          )
           @?= Right 3
     , testCase "input and output" do
-        runInterpL (Module (Print (BinOp Add (lint 1) InputInt) (Expr (lint 0)))) ["2"]
+        ( runInterpL
+            . Module
+            . Print (BinOp Add (lint 1) InputInt)
+            $ Expr (lint 0)
+          )
+          ["2"]
           @?= Right (0, ["3"])
     ]
 
@@ -85,16 +97,54 @@ rcoTests =
   testGroup
     "removeComplexOperands"
     [ testCase "already monadic" do
-        let program = Module (Let "x" (UnaryOp USub (lint 1)) (Expr (BinOp Add "x" (lint 2))))
-            expected = MModule (MLet "x" (MUnaryOp USub (Lit 1)) (MExpr (MBinOp Add "x" (Lit 2))))
+        let program =
+              Module
+                . Let "x" (UnaryOp USub (lint 1))
+                $ Expr (BinOp Add "x" (lint 2))
+            expected =
+              MModule
+                . MLet "x" (MUnaryOp USub (Lit 1))
+                $ MExpr (MBinOp Add "x" (Lit 2))
         runPureEff (runGensym (removeComplexOperands program)) @?= expected
     , testCase "let with an atom" do
-        let program = Module (Let "x" (lint 1) (Expr (lint 2)))
-            expected = MModule (MLet "x" (mlint 1) (MExpr (mlint 2)))
+        let program =
+              Module
+                . Let "x" (lint 1)
+                $ Expr (lint 2)
+            expected =
+              MModule
+                . MLet "x" (mlint 1)
+                $ MExpr (mlint 2)
+        runPureEff (runGensym (removeComplexOperands program)) @?= expected
+    , testCase "binop with 2 complex operands" do
+        let program =
+              Module $
+                Expr (BinOp Add (UnaryOp USub (lint 1)) InputInt)
+            expected =
+              MModule
+                . MLet "t1" (MUnaryOp USub (Lit 1))
+                . MLet "t2" MInputInt
+                $ MExpr (MBinOp Add "t1" "t2")
+        runPureEff (runGensym (removeComplexOperands program)) @?= expected
+    , testCase "binop with 1 complex operand" do
+        let program =
+              Module $
+                Expr (BinOp Add (UnaryOp USub (lint 1)) (lint 2))
+            expected =
+              MModule
+                . MLet "t1" (MUnaryOp USub (Lit 1))
+                $ MExpr (MBinOp Add "t1" (Lit 2))
         runPureEff (runGensym (removeComplexOperands program)) @?= expected
     , testCase "print with complex expr" do
-        let program = Module (Print (BinOp Add (lint 1) (lint 2)) (Expr (lint 0)))
-            expected = MModule (MLet "t1" (MBinOp Add (Lit 1) (Lit 2)) (MPrint (Name "t1") (MExpr (MAtom (Lit 0)))))
+        let program =
+              Module
+                . Print (BinOp Add (lint 1) (lint 2))
+                $ Expr (lint 0)
+            expected =
+              MModule
+                . MLet "t1" (MBinOp Add (Lit 1) (Lit 2))
+                . MPrint (Name "t1")
+                $ MExpr (mlint 0)
         runPureEff (runGensym (removeComplexOperands program)) @?= expected
     ]
 
