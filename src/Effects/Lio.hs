@@ -37,9 +37,9 @@ runLioPure
   => [Text]
   -> Eff (Lio : es) a
   -> Eff es (a, ([Text], [Text]))
-runLioPure inputs = reinterpret (runState (inputs, [])) \_ -> \case
+runLioPure inputs = fmap (second (second reverse)) . reinterpret (runState (inputs, [])) \_ -> \case
   LioInputLine ->
     gets fst >>= \case
       [] -> throwError . LioError $ "No more input"
-      input : rest -> input <$ modify (second (const rest))
-  LioPrintLine line -> modify (second (line :))
+      input : rest -> input <$ modify (first (const rest))
+  LioPrintLine (lines -> ls) -> modify (second (reverse ls <>))
