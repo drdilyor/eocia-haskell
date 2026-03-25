@@ -1,5 +1,7 @@
 module Main (main) where
 
+import Data.Text qualified as T
+import Effects.Gensym
 import Effects.Lio
 import Lang
 import Pre
@@ -11,7 +13,7 @@ main :: IO ()
 main = defaultMain tests
 
 tests :: TestTree
-tests = testGroup "tests" [peTests, interpTests]
+tests = testGroup "tests" [peTests, interpTests, gensymTests]
 
 peTests :: TestTree
 peTests =
@@ -53,4 +55,28 @@ interpTests =
     , testCase "input and output" do
         runInterpL (Module (Print (BinOp Add (Constant 1) InputInt) (Expr (Constant 0)))) ["2"]
           @?= Right (0, ["3"])
+    ]
+
+genPrefixes :: Gen [Text]
+genPrefixes = listOf . oneof . map (pure . pack . singleton) $ ['a' .. 'k']
+
+gensymTests :: TestTree
+gensymTests =
+  testGroup
+    "gensym"
+    [ testProperty "respects prefixes" $
+        forAll genPrefixes \prefixes ->
+          classify (compareLength (nubOrd prefixes) 1 == GT) "distinct horses" $
+            let prop = conjoin $ zipWith checkPrefix prefixes syms
+                syms = runPureEff (runGensym (mapM gensym prefixes))
+                checkPrefix prefix sym =
+                  counterexample (unpack $ "gensym " <> show prefix <> " -> " <> show sym) $
+                    prefix `T.isPrefixOf` sym
+             in prop
+    , testProperty "distinct prefixes" $
+        forAll genPrefixes \prefixes ->
+          classify (nubOrd prefixes /= prefixes) "duplicate prefixes" $
+            counterexample (unpack $ show prefixes) $
+              let syms = runPureEff (runGensym (mapM gensym prefixes))
+               in nubOrd syms == syms
     ]

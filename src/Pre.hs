@@ -1,6 +1,7 @@
 module Pre (
   module Prelude,
   module Data.List,
+  module Data.Containers.ListUtils,
   module Data.Maybe,
   module Data.Monoid,
   module Data.Function,
@@ -35,6 +36,7 @@ import Data.List
 import Data.Maybe
 import Data.Monoid
 import Data.String
+import Data.Containers.ListUtils
 import Data.Text (Text, pack, show, unpack)
 import Data.Text.Encoding
 import Data.Text.IO

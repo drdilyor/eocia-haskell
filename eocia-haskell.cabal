@@ -31,6 +31,7 @@ common common-settings
                     , text
                     , megaparsec
                     , recursion-schemes
+                    , containers
                     , unordered-containers
     default-language: GHC2024
 
@@ -40,6 +41,7 @@ library
     exposed-modules:  Pre
                     , Lang
                     , Effects.Lio
+                    , Effects.Gensym
 
 executable eocia-haskell
     import:           common-settings
