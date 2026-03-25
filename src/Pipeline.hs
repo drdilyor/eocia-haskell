@@ -24,6 +24,14 @@ removeComplexOperands (Module ss) = MModule <$> rcoStmt ss
       s <- rcoExpr e
       pure $ msbind s t $ MExpr (MUnaryOp op (Name t))
     BinOp op (Atom x) (Atom y) -> pure $ MExpr (MBinOp op x y)
+    BinOp op (Atom x) e2 -> do
+      t <- gensym "t"
+      s <- rcoExpr e2
+      pure $ msbind s t $ MExpr (MBinOp op x (Name t))
+    BinOp op e1 (Atom y) -> do
+      t <- gensym "t"
+      s <- rcoExpr e1
+      pure $ msbind s t $ MExpr (MBinOp op (Name t) y)
     BinOp op e1 e2 -> do
       t1 <- gensym "t"
       t2 <- gensym "t"
