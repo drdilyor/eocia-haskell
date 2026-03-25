@@ -40,6 +40,7 @@ library
     hs-source-dirs:   src
     exposed-modules:  Pre
                     , Lang
+                    , Pipeline
                     , Effects.Lio
                     , Effects.Gensym
 

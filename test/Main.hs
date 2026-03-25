@@ -4,6 +4,7 @@ import Data.Text qualified as T
 import Effects.Gensym
 import Effects.Lio
 import Lang
+import Pipeline
 import Pre
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -20,14 +21,11 @@ peTests =
   testGroup
     "peExp"
     [ testCase "pe does evaluate" do
-        peExp (BinOp Add (Constant 1) (Constant 2))
-          @?= Constant 3
+        peExp (BinOp Add (lint 1) (lint 2))
+          @?= lint 3
     , testCase "pe stops at InputInt" do
-        peExp (BinOp Add InputInt (BinOp Add (Constant 1) (Constant 2)))
-          @?= BinOp Add InputInt (Constant 3)
-          -- , testCase "pe understands associativity" $
-          --     peExp (BinOp Add (Constant 1) (BinOp Add (Constant 2) InputInt))
-          --       @?= BinOp Add (Constant 3) (InputInt)
+        peExp (BinOp Add InputInt (BinOp Add (lint 1) (lint 2)))
+          @?= BinOp Add InputInt (lint 3)
     ]
 
 runInterpL :: L -> [Text] -> Either InterpError (Int, [Text])
@@ -47,13 +45,13 @@ interpTests =
   testGroup
     "interpTests"
     [ testCase "basic arithmetic" do
-        runInterpSimple (Module (Expr (BinOp Add (Constant 1) (Constant 2))))
+        runInterpSimple (Module (Expr (BinOp Add (lint 1) (lint 2))))
           @?= Right 3
     , testCase "variables work" do
-        runInterpSimple (Module (Let "x" (Constant 1) (Expr (BinOp Add "x" (Constant 2)))))
+        runInterpSimple (Module (Let "x" (lint 1) (Expr (BinOp Add "x" (lint 2)))))
           @?= Right 3
     , testCase "input and output" do
-        runInterpL (Module (Print (BinOp Add (Constant 1) InputInt) (Expr (Constant 0)))) ["2"]
+        runInterpL (Module (Print (BinOp Add (lint 1) InputInt) (Expr (lint 0)))) ["2"]
           @?= Right (0, ["3"])
     ]
 
@@ -79,4 +77,19 @@ gensymTests =
             counterexample (unpack $ show prefixes) $
               let syms = runPureEff (runGensym (mapM gensym prefixes))
                in nubOrd syms == syms
+    ]
+
+rcoTests :: TestTree
+rcoTests =
+  testGroup
+    "removeComplexOperands"
+    [ testCase "already monadic" do
+        runPureEff (runGensym (removeComplexOperands (Module (Let "x" (UnaryOp USub (lint 1)) (Expr (BinOp Add "x" (lint 2)))))))
+          @?= MModule (MLet "x" (MUnaryOp USub (Lit 1)) (MExpr (MBinOp Add "x" (Lit 2))))
+    , testCase "let with an atom" do
+        runPureEff (runGensym (removeComplexOperands (Module (Let "x" (lint 1) (Expr (lint 2))))))
+          @?= MModule (MLet "x" (mlint 1) (MExpr (mlint 2)))
+    , testCase "print with complex expr" do
+        runPureEff (runGensym (removeComplexOperands (Module (Print (BinOp Add (lint 1) (lint 2)) (Expr (lint 0))))))
+          @?= MModule (MLet "t1" (MBinOp Add (Lit 1) (Lit 2)) (MPrint (Name "t1") (MExpr (MAtom (Lit 0)))))
     ]

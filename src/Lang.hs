@@ -17,14 +17,19 @@ data Stmt
   deriving (Eq, Show, Read)
 
 data Exp
-  = Constant Int
-  | Name Text
+  = Atom Atom
   | InputInt
   | UnaryOp UnaryOp Exp
   | BinOp BinOp Exp Exp
   deriving (Eq, Show, Read)
 
+data Atom = Lit Int | Name Text
+  deriving (Eq, Show, Read)
+
 instance IsString Exp where
+  fromString = Atom . fromString
+
+instance IsString Atom where
   fromString = Name . fromString
 
 data UnaryOp
@@ -44,6 +49,9 @@ data InterpError
 makeBaseFunctor ''L
 makeBaseFunctor ''Stmt
 makeBaseFunctor ''Exp
+
+lint :: Int -> Exp
+lint = Atom . Lit
 
 newtype InterpEnv
   = InterpEnv {bindings :: Map.HashMap Text Int}
@@ -69,8 +77,8 @@ interpStmt = cata \case
 
 interpExp :: forall es. (Lio :> es, State InterpEnv :> es, Error InterpError :> es) => Exp -> Eff es Int
 interpExp = cata \case
-  (ConstantF x) -> pure x
-  (NameF v) ->
+  (AtomF (Lit x)) -> pure x
+  (AtomF (Name v)) ->
     lookupBinding v >>= \case
       Nothing -> throwError (UnboundVariable v)
       Just x -> pure x
@@ -99,10 +107,35 @@ peStmt = cata \case
 
 peExp :: Exp -> Exp
 peExp = cata \case
-  (ConstantF x) -> Constant x
-  (NameF v) -> Name v
+  (AtomF x) -> Atom x
   InputIntF -> InputInt
-  (UnaryOpF op (Constant x)) -> Constant $ interpUnaryOp op x
+  (UnaryOpF op (Atom (Lit x))) -> lint $ interpUnaryOp op x
   (UnaryOpF op e) -> UnaryOp op e
-  (BinOpF op (Constant x) (Constant y)) -> Constant $ interpBinOp op x y
+  (BinOpF op (Atom (Lit x)) (Atom (Lit y))) -> lint $ interpBinOp op x y
   (BinOpF op e1 e2) -> BinOp op e1 e2
+
+newtype ML = MModule MStmt
+  deriving (Eq, Show, Read)
+
+data MStmt
+  = MExpr MExp
+  | MPrint Atom MStmt
+  | MLet Text MExp MStmt
+  deriving (Eq, Show, Read)
+
+data MExp
+  = MAtom Atom
+  | MInputInt
+  | MUnaryOp UnaryOp Atom
+  | MBinOp BinOp Atom Atom
+  deriving (Eq, Show, Read)
+
+instance IsString MExp where
+  fromString = MAtom . Name . fromString
+
+makeBaseFunctor ''ML
+makeBaseFunctor ''MStmt
+makeBaseFunctor ''MExp
+
+mlint :: Int -> MExp
+mlint x = MAtom (Lit x)
