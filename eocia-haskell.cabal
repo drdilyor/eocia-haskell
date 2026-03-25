@@ -45,6 +45,7 @@ library
                     , Lang
                     , Pipeline
                     , Target.Asm
+                    , Target.Program
                     , Effects.Lio
                     , Effects.Gensym
 

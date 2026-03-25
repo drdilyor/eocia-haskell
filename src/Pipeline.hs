@@ -7,6 +7,7 @@ import Effects.Gensym
 import Lang
 import Pre
 import Target.Asm
+import Target.Program
 
 msbind :: MStmt -> Text -> MStmt -> MStmt
 msbind s x j = flip cata s \case
@@ -179,3 +180,30 @@ patchInstructions =
         Pushq a -> [Pushq a]
         Popq a -> [Popq a]
         Retq -> [Retq]
+
+preludeAndConclusion :: (Int, [Asm]) -> Program
+preludeAndConclusion (fs, asm) =
+  Program
+    { globals = ["_start"]
+    , asm =
+        [ ("_start",)
+            [ Pushq rbp
+            , Movq rbp rsp
+            , Subq rsp (Imm fs)
+            ]
+        , ("main",) asm
+        , ("conclusion",)
+            [ Movq rsp rbp
+            , Popq rbp
+            , Retq
+            ]
+        ]
+    }
+
+compile :: L -> Program
+compile l = runPureEff . runGensym $ do
+  ml <- removeComplexOperands l
+  asmvar <- selectInstructions ml
+  (size, asm) <- assignHomes asmvar
+  pure $ preludeAndConclusion (size, patchInstructions asm)
+
