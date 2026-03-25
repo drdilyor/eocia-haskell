@@ -1,8 +1,8 @@
 module Target.Asm where
 
-import Pre hiding (show)
-import Data.Kind
 import Data.Ix
+import Data.Kind
+import Pre hiding (show)
 
 data Argtype = Src | Dst deriving (Eq, Show, Read)
 data Vartype = Avar | Aint deriving (Eq, Show, Read)
@@ -39,9 +39,11 @@ deriving instance Show (Arg a v)
 
 data Reg
   = Rax
+  | Rcx
+  | Rdx
+  | Rbx
   | Rsp
   | Rbp
-  | Rbx
   | Rsi
   | Rdi
   | R8
@@ -54,86 +56,78 @@ data Reg
   | R15
   deriving (Eq, Show, Read, Enum, Ord, Ix)
 
-rax, rsp, rbp, rbx, rsi, rdi, r8, r9, r10, r11, r12, r13, r14, r15 :: Arg a v
-rax = Reg Rax
-rsp = Reg Rsp
-rbp = Reg Rbp
-rbx = Reg Rbx
-rsi = Reg Rsi
-rdi = Reg Rdi
-r8 = Reg R8
-r9 = Reg R9
-r10 = Reg R10
-r11 = Reg R11
-r12 = Reg R12
-r13 = Reg R13
-r14 = Reg R14
-r15 = Reg R15
+rax, rcx, rdx, rbx, rsp, rbp, rsi, rdi, r8, r9, r10, r11, r12, r13, r14, r15 :: Arg a v
+(rax, rcx, rdx, rbx, rsp, rbp, rsi, rdi, r8, r9, r10, r11, r12, r13, r14, r15) =
+  (Reg Rax, Reg Rcx, Reg Rdx, Reg Rbx, Reg Rsp, Reg Rbp, Reg Rsi, Reg Rdi, Reg R8, Reg R9, Reg R10, Reg R11, Reg R12, Reg R13, Reg R14, Reg R15)
 
 instance Read (Arg Src Aint) where
-  readPrec = parens $ choice
-    [ prec 10 do
-        Ident "Imm" <- lexP
-        i <- step readPrec
-        pure (Imm i)
-    , prec 10 do
-        Ident "Reg" <- lexP
-        r <- step readPrec
-        pure (Reg r)
-    , prec 10 do
-        Ident "Deref" <- lexP
-        i <- step readPrec
-        r <- step readPrec
-        pure (Deref i r)
-    ]
+  readPrec =
+    parens . choice $
+      [ prec 10 do
+          Ident "Imm" <- lexP
+          i <- step readPrec
+          pure (Imm i)
+      , prec 10 do
+          Ident "Reg" <- lexP
+          r <- step readPrec
+          pure (Reg r)
+      , prec 10 do
+          Ident "Deref" <- lexP
+          i <- step readPrec
+          r <- step readPrec
+          pure (Deref i r)
+      ]
 
 instance Read (Arg Dst Aint) where
-  readPrec = parens $ choice
-    [ prec 10 do
-        Ident "Reg" <- lexP
-        r <- step readPrec
-        pure (Reg r)
-    , prec 10 do
-        Ident "Deref" <- lexP
-        i <- step readPrec
-        r <- step readPrec
-        pure (Deref i r)
-    ]
+  readPrec =
+    parens . choice $
+      [ prec 10 do
+          Ident "Reg" <- lexP
+          r <- step readPrec
+          pure (Reg r)
+      , prec 10 do
+          Ident "Deref" <- lexP
+          i <- step readPrec
+          r <- step readPrec
+          pure (Deref i r)
+      ]
 
 instance Read (Arg Src Avar) where
-  readPrec = parens $ choice
-    [ prec 10 do
-        Ident "Imm" <- lexP
-        i <- step readPrec
-        pure (Imm i)
-    , prec 10 do
-        Ident "Var" <- lexP
-        t <- step readPrec
-        pure (Var t)
-    , prec 10 do
-        Ident "Reg" <- lexP
-        r <- step readPrec
-        pure (Reg r)
-    , prec 10 do
-        Ident "Deref" <- lexP
-        i <- step readPrec
-        r <- step readPrec
-        pure (Deref i r)
-    ]
+  readPrec =
+    parens . choice $
+      [ prec 10 do
+          Ident "Imm" <- lexP
+          i <- step readPrec
+          pure (Imm i)
+      , prec 10 do
+          Ident "Var" <- lexP
+          t <- step readPrec
+          pure (Var t)
+      , prec 10 do
+          Ident "Reg" <- lexP
+          r <- step readPrec
+          pure (Reg r)
+      , prec 10 do
+          Ident "Deref" <- lexP
+          i <- step readPrec
+          r <- step readPrec
+          pure (Deref i r)
+      ]
 
 instance Read (Arg Dst Avar) where
-  readPrec = parens $ choice
-    [ prec 10 do
-        Ident "Var" <- lexP
-        t <- step readPrec
-        pure (Var t)
-    , prec 10 do
-        Ident "Reg" <- lexP
-        r <- step readPrec
-        pure (Reg r)
-    , prec 10 do
-        Ident "Deref" <- lexP
-        i <- step readPrec
-        r <- step readPrec
-        pure (Deref i r)
-    ]
+  readPrec =
+    parens . choice $
+      [ prec 10 do
+          Ident "Var" <- lexP
+          t <- step readPrec
+          pure (Var t)
+      , prec 10 do
+          Ident "Reg" <- lexP
+          r <- step readPrec
+          pure (Reg r)
+      , prec 10 do
+          Ident "Deref" <- lexP
+          i <- step readPrec
+          r <- step readPrec
+          pure (Deref i r)
+      ]

@@ -2,6 +2,7 @@
 module Pipeline where
 
 import Data.HashMap.Strict qualified as Map
+import Data.Int
 import Effects.Gensym
 import Lang
 import Pre
@@ -104,17 +105,17 @@ selectInstructions (MModule ss) = fmap reverse $ execState [] $ siStmt ss
   siStmt (MLet x MInputInt k) = do
     emit
       [ Callq "input_int"
-      , Movq (Var x) (Reg Rax)
+      , Movq (Var x) rax
       ]
     siStmt k
   siStmt (MPrint e k) = do
     emit
-      [ Movq (Reg Rax) (siArg e)
+      [ Movq rdi (siArg e)
       , Callq "print_int"
       ]
     siStmt k
   siStmt (MExpr (MAtom x)) = do
-    emit [Movq (Reg Rax) (siArg x)]
+    emit [Movq rax (siArg x)]
   siStmt (MExpr e) = do
     t <- gensym "t"
     siStmt (MLet t e (MExpr (MAtom (Name t))))
@@ -146,7 +147,7 @@ assignHomes asmvar = mdo
     sf <- get
     case Map.lookup x sf.offsets of
       Nothing -> do
-        let o = - (sf.size + 8)
+        let o = -(sf.size + 8)
         put $ StackFrame (Map.insert x o sf.offsets) (sf.size + 8)
         pure (Deref Rbp o)
       Just o ->
@@ -157,10 +158,17 @@ assignHomes asmvar = mdo
 
 patchInstructions :: [Asm] -> [Asm]
 patchInstructions =
-  let patch inst (Deref a x) (Deref b y) =
+  let patch :: (Arg Dst Aint -> Arg Src Aint -> Asm) -> Arg Dst Aint -> Arg Src Aint -> [Asm]
+      patch inst (Deref a x) (Deref b y) =
         [ Movq (Reg Rax) (Deref b y)
         , inst (Deref a x) (Reg Rax)
         ]
+      patch inst (Deref a x) (Imm y)
+        -- y doesn't fit in 32-bit signed integer
+        | y /= fromIntegral @Int32 @Int (fromIntegral y) =
+            [ Movq (Reg Rax) (Imm y)
+            , inst (Deref a x) (Reg Rax)
+            ]
       patch f x y = [f x y]
    in concatMap \case
         Movq a b -> patch Movq a b
