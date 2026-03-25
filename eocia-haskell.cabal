@@ -25,6 +25,7 @@ common common-settings
                       , ViewPatterns
                       , NoImplicitPrelude
                       , StandaloneDeriving
+                      , NoFieldSelectors
     build-depends:    base ^>=4.21.0.0
                     , effectful-core
                     , effectful-plugin

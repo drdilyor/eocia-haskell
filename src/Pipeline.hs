@@ -1,5 +1,6 @@
 module Pipeline where
 
+import Data.HashMap.Strict qualified as Map
 import Effects.Gensym
 import Lang
 import Pre
@@ -106,3 +107,52 @@ selectInstructions (MModule ss) = fmap reverse $ execState [] $ siStmt ss
   siStmt (MExpr e) = do
     t <- gensym "t"
     siStmt (MLet t e (MExpr (MAtom (Name t))))
+
+data StackFrame = StackFrame
+  { offsets :: Map.HashMap Text Int
+  , size :: Int
+  }
+
+assignHomes :: forall es. [AsmVar] -> Eff es (Int, [Asm])
+assignHomes asmvar = mdo
+  (program, StackFrame{size}) <-
+    runState (StackFrame Map.empty 0) $
+      mapM instruction asmvar
+  pure (size, program)
+ where
+  instruction :: AsmVar -> Eff (State StackFrame : es) Asm
+  instruction (Movq a b) = Movq <$> argument a <*> argument b
+  instruction (Addq a b) = Addq <$> argument a <*> argument b
+  instruction (Subq a b) = Subq <$> argument a <*> argument b
+  instruction (Negq a) = Negq <$> argument a
+  instruction (Callq x) = pure $ Callq x
+  instruction Retq = pure Retq
+
+  argument :: Arg a Avar -> Eff (State StackFrame : es) (Arg a Aint)
+  argument (Var x) = do
+    sf <- get
+    case Map.lookup x sf.offsets of
+      Nothing -> do
+        let o = - (sf.size + 8)
+        put $ StackFrame (Map.insert x o sf.offsets) (sf.size + 8)
+        pure (Deref Rbp o)
+      Just o ->
+        pure (Deref Rbp o)
+  argument (Imm x) = pure $ Imm x
+  argument (Reg x) = pure $ Reg x
+  argument (Deref o x) = pure $ Deref o x
+
+patchInstructions :: [Asm] -> [Asm]
+patchInstructions =
+  let patch inst (Deref a x) (Deref b y) =
+        [ Movq (Reg Rax) (Deref b y)
+        , inst (Deref a x) (Reg Rax)
+        ]
+      patch f x y = [f x y]
+   in concatMap \case
+        Movq a b -> patch Movq a b
+        Addq a b -> patch Addq a b
+        Subq a b -> patch Subq a b
+        Callq x -> [Callq x]
+        Negq a -> [Negq a]
+        Retq -> [Retq]

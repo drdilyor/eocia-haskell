@@ -15,7 +15,7 @@ main :: IO ()
 main = defaultMain tests
 
 tests :: TestTree
-tests = testGroup "tests" [peTests, interpTests, gensymTests, rcoTests, siTests]
+tests = testGroup "tests" [peTests, interpTests, gensymTests, rcoTests, siTests, ahTests, piTests]
 
 peTests :: TestTree
 peTests =
@@ -134,4 +134,40 @@ siTests =
               ]
 
         runPureEff (runGensym (selectInstructions program)) @?= expected
+    ]
+
+ahTests :: TestTree
+ahTests =
+  testGroup
+    "assignHomes"
+    [ testCase "spills" do
+        let program = [Movq (Var "x") (Imm 0), Movq (Var "y") (Var "x")]
+            expected =
+              [ Movq (Deref Rbp (-8)) (Imm 0)
+              , Movq (Deref Rbp (-16)) (Deref Rbp (-8))
+              ]
+        runPureEff (assignHomes program) @?= (16, expected)
+    ]
+
+piTests :: TestTree
+piTests =
+  testGroup
+    "patchInstructions"
+    [ testCase "no patching needed" do
+        let program =
+              [ Movq (Deref Rbp 0) (Imm 1)
+              , Addq (Reg Rax) (Imm 2)
+              ]
+            expected =
+              [ Movq (Deref Rbp 0) (Imm 1)
+              , Addq (Reg Rax) (Imm 2)
+              ]
+        patchInstructions program @?= expected
+    , testCase "patches memory-to-memory mov" do
+        let program = [Movq (Deref Rbp (-8)) (Deref Rbp (-16))]
+            expected =
+              [ Movq (Reg Rax) (Deref Rbp (-16))
+              , Movq (Deref Rbp (-8)) (Reg Rax)
+              ]
+        patchInstructions program @?= expected
     ]
