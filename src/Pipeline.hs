@@ -159,25 +159,29 @@ assignHomes asmvar = mdo
 
 patchInstructions :: [Asm] -> [Asm]
 patchInstructions =
-  let patch :: (Arg Dst Aint -> Arg Src Aint -> Asm) -> Arg Dst Aint -> Arg Src Aint -> [Asm]
-      patch inst (Deref a x) (Deref b y) =
+  let patch2 :: (Arg Dst Aint -> Arg Src Aint -> Asm) -> Arg Dst Aint -> Arg Src Aint -> [Asm]
+      patch2 inst (Deref a x) (Deref b y) =
         [ Movq (Reg Rax) (Deref b y)
         , inst (Deref a x) (Reg Rax)
         ]
-      patch inst (Deref a x) (Imm y)
+      patch2 inst a@(Deref _ _) b@(Imm _) = patchImm (inst a) b
+      patch2 f x y = [f x y]
+
+      patchImm :: (Arg Src Aint -> Asm) -> Arg Src Aint -> [Asm]
+      patchImm inst (Imm y)
         -- y doesn't fit in 32-bit signed integer
         | y /= fromIntegral @Int32 @Int (fromIntegral y) =
             [ Movq (Reg Rax) (Imm y)
-            , inst (Deref a x) (Reg Rax)
+            , inst (Reg Rax)
             ]
-      patch f x y = [f x y]
+      patchImm f x = [f x]
    in concatMap \case
-        Movq a b -> patch Movq a b
-        Addq a b -> patch Addq a b
-        Subq a b -> patch Subq a b
+        Movq a b -> patch2 Movq a b
+        Addq a b -> patch2 Addq a b
+        Subq a b -> patch2 Subq a b
         Callq x -> [Callq x]
         Negq a -> [Negq a]
-        Pushq a -> [Pushq a]
+        Pushq a -> patchImm Pushq a
         Popq a -> [Popq a]
         Retq -> [Retq]
 
@@ -206,4 +210,3 @@ compile l = runPureEff . runGensym $ do
   asmvar <- selectInstructions ml
   (size, asm) <- assignHomes asmvar
   pure $ preludeAndConclusion (size, patchInstructions asm)
-

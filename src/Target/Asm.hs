@@ -14,7 +14,7 @@ data AsmB v
   | Subq  (Arg Dst v) (Arg Src v)
   | Negq  (Arg Dst v)
   | Movq  (Arg Dst v) (Arg Src v)
-  | Pushq (Arg Dst v)
+  | Pushq (Arg Src v)
   | Popq  (Arg Dst v)
   | Callq Text
   | Retq
