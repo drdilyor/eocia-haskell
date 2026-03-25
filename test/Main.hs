@@ -7,6 +7,7 @@ import Lang
 import Pipeline
 import Pre
 import Target.Asm
+import Target.InterpTests qualified as InterpTests
 import Test.Tasty
 import Test.Tasty.HUnit
 import Test.Tasty.QuickCheck
@@ -15,7 +16,7 @@ main :: IO ()
 main = defaultMain tests
 
 tests :: TestTree
-tests = testGroup "tests" [peTests, interpTests, gensymTests, rcoTests, siTests, ahTests, piTests]
+tests = testGroup "tests" [peTests, interpTests, gensymTests, rcoTests, siTests, ahTests, piTests, InterpTests.interpAsmTests]
 
 peTests :: TestTree
 peTests =

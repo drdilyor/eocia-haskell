@@ -36,6 +36,7 @@ common common-settings
                     , recursion-schemes
                     , containers
                     , unordered-containers
+                    , vector
     default-language: GHC2024
 
 library
@@ -46,6 +47,7 @@ library
                     , Pipeline
                     , Target.Asm
                     , Target.Program
+                    , Target.Interp
                     , Effects.Lio
                     , Effects.Gensym
 
@@ -59,6 +61,7 @@ test-suite eocia-haskell-test
     import:           common-settings
     type:             exitcode-stdio-1.0
     main-is:          Main.hs
+    other-modules:    Target.InterpTests
     hs-source-dirs:   test
     build-depends:    eocia-haskell
                     , tasty
