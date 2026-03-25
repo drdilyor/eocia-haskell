@@ -119,8 +119,8 @@ newtype ML = MModule MStmt
 
 data MStmt
   = MExpr MExp
-  | MPrint Atom MStmt
   | MLet Text MExp MStmt
+  | MPrint Atom MStmt
   deriving (Eq, Show, Read)
 
 data MExp

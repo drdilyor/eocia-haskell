@@ -45,21 +45,21 @@ removeComplexOperands (Module ss) = MModule <$> rcoStmt ss
     pure $ msbind s x k'
 
 selectInstructions :: forall es. (Gensym :> es) => ML -> Eff es [AsmVar]
-selectInstructions (MModule ss) = execState [] $ siStmt ss
+selectInstructions (MModule ss) = fmap reverse $ execState [] $ siStmt ss
  where
-  atomToArg :: Atom -> Arg Src Avar
-  atomToArg (Lit x) = Imm x
-  atomToArg (Name x) = Var x
+  emit :: [AsmVar] -> Eff (State [AsmVar] : es) ()
+  emit x = modify (reverse x <>)
+
+  siArg :: Atom -> Arg Src Avar
+  siArg (Lit x) = Imm x
+  siArg (Name x) = Var x
 
   siBinOp Add = Addq
   siBinOp Sub = Subq
   siUnaryOp USub = Negq
 
-  emit :: [AsmVar] -> Eff (State [AsmVar] : es) ()
-  emit x = modify (<> x)
-
   siStmt (MLet x (MAtom y) k) = do
-    emit [Movq (Var x) (atomToArg y)]
+    emit [Movq (Var x) (siArg y)]
     siStmt k
   siStmt (MLet x (MBinOp op (Name y) (Name z)) k)
     | x == y = do
@@ -70,13 +70,13 @@ selectInstructions (MModule ss) = execState [] $ siStmt ss
         emit
           [ Movq (Var t) (Var y)
           , siBinOp op (Var t) (Var z)
-          , siBinOp op (Var x) (Var t)
+          , Movq (Var x) (Var t)
           ]
         siStmt k
   siStmt (MLet x (MBinOp op y z) k) = do
     emit
-      [ Movq (Var x) (atomToArg y)
-      , siBinOp op (Var x) (atomToArg z)
+      [ Movq (Var x) (siArg y)
+      , siBinOp op (Var x) (siArg z)
       ]
     siStmt k
   siStmt (MLet x (MUnaryOp op (Name y)) k)
@@ -84,26 +84,25 @@ selectInstructions (MModule ss) = execState [] $ siStmt ss
         emit [siUnaryOp op (Var x)]
         siStmt k
   siStmt (MLet x (MUnaryOp op y) k) = do
-    t <- gensym "t"
     emit
-      [ Movq (Var t) (atomToArg y)
+      [ Movq (Var x) (siArg y)
       , siUnaryOp op (Var x)
       ]
     siStmt k
   siStmt (MLet x MInputInt k) = do
     emit
-      [ Callq "read_int"
+      [ Callq "input_int"
       , Movq (Var x) (Reg Rax)
       ]
     siStmt k
   siStmt (MPrint e k) = do
     emit
-      [ Callq "read_int"
-      , Movq (Reg Rax) (atomToArg e)
+      [ Movq (Reg Rax) (siArg e)
+      , Callq "print_int"
       ]
     siStmt k
-  siStmt (MExpr (MAtom (Name t))) = do
-    emit [Movq (Reg Rax) (Var t)]
+  siStmt (MExpr (MAtom x)) = do
+    emit [Movq (Reg Rax) (siArg x)]
   siStmt (MExpr e) = do
     t <- gensym "t"
     siStmt (MLet t e (MExpr (MAtom (Name t))))
