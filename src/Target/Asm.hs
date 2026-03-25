@@ -28,7 +28,7 @@ data Arg atype vartype where
   Imm :: Int ->          Arg Src v
   Var :: Text ->         Arg a   Avar
   Reg :: Reg ->          Arg a   v
-  Deref :: Int -> Reg -> Arg a   v
+  Deref :: Reg -> Int -> Arg a   v
 
 deriving instance Eq (Arg a v)
 deriving instance Show (Arg a v)
