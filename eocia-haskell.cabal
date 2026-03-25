@@ -24,6 +24,7 @@ common common-settings
                       , FlexibleInstances
                       , ViewPatterns
                       , NoImplicitPrelude
+                      , StandaloneDeriving
     build-depends:    base ^>=4.21.0.0
                     , effectful-core
                     , effectful-plugin
@@ -41,6 +42,7 @@ library
     exposed-modules:  Pre
                     , Lang
                     , Pipeline
+                    , Target.Asm
                     , Effects.Lio
                     , Effects.Gensym
 

@@ -4,6 +4,7 @@ module Pre (
   module Data.Containers.ListUtils,
   module Data.Maybe,
   module Data.Monoid,
+  module Data.Void,
   module Data.Function,
   module Data.Functor,
   module Data.Functor.Base,
@@ -27,6 +28,7 @@ module Pre (
 import Control.Applicative
 import Control.Arrow
 import Control.Monad
+import Data.Containers.ListUtils
 import Data.Function
 import Data.Functor hiding (unzip)
 import Data.Functor.Base
@@ -36,10 +38,10 @@ import Data.List
 import Data.Maybe
 import Data.Monoid
 import Data.String
-import Data.Containers.ListUtils
 import Data.Text (Text, pack, show, unpack)
 import Data.Text.Encoding
 import Data.Text.IO
+import Data.Void
 import Effectful
 import Effectful.Dispatch.Dynamic
 import Effectful.Error.Static
