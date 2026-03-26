@@ -5,11 +5,13 @@ import Data.HashMap.Strict qualified as Map
 import Data.HashSet qualified as Set
 import Data.Int
 import Data.List.NonEmpty qualified as NE
+import Data.Set qualified as OrdSet
 import Effects.Gensym
 import Lang
 import Pre
 import Target.Asm
 import Target.Program
+import Data.Char (isSpace)
 
 msbind :: MStmt -> Text -> MStmt -> MStmt
 msbind s x j = flip cata s \case
@@ -157,56 +159,142 @@ assignHomes asmvar = mdo
         pure (Deref Rbp o)
   argument (Imm x) = pure $ Imm x
   argument (Reg x) = pure $ Reg x
-  argument (Deref o x) = pure $ Deref o x
+  argument (Deref x o) = pure $ Deref x o
 
-collectVars :: [AsmVar] -> [Text]
-collectVars = concatMap vars
- where
-  arg :: Arg a v -> [Text]
-  arg (Var x) = [x]
-  arg _ = []
+type LivenessItem = Either Reg Text
+type LivenessTrace = NonEmpty (Set.HashSet LivenessItem)
 
-  vars (Addq a b) = arg a <> arg b
-  vars (Subq a b) = arg a <> arg b
-  vars (Negq a) = arg a
-  vars (Movq a b) = arg a <> arg b
-  vars (Pushq a) = arg a
-  vars (Popq a) = arg a
-  vars (Callq _) = mempty
-  vars Retq = mempty
-
-uncoverLive :: [AsmVar] -> NonEmpty (Set.HashSet (Either Reg Text))
+uncoverLive :: [AsmVar] -> LivenessTrace
 uncoverLive [] = NE.singleton Set.empty
 uncoverLive (inst : rest) =
   let restLiveness@(after :| _) = uncoverLive rest
       before = (after `Set.difference` write inst) `Set.union` read' inst
    in before `NE.cons` restLiveness
- where
-  arg :: Arg a v -> Set.HashSet (Either Reg Text)
-  arg (Var x) = Set.singleton (Right x)
-  arg (Reg x) = Set.singleton (Left x)
-  arg (Deref x _) = Set.singleton (Left x)
-  arg _ = Set.empty
 
-  write (Movq a _) = arg a
-  write (Addq a _) = arg a
-  write (Subq a _) = arg a
-  write (Negq a) = arg a
-  write (Pushq _) = mempty
-  write (Popq a) = arg a
-  write (Callq _) = Set.fromList $ Left <$> [Rax, Rcx, Rdx, Rsi, Rdi, R8, R9, R10, R11]
-  write Retq = mempty
+-- TODO: somehow refactor
+-- TODO:Deref is completely broken because deref actually reads even if it is dst
+arg' :: Arg a v -> Maybe LivenessItem
+arg' (Var x) = Just (Right x)
+arg' (Reg x) = Just (Left x) -- TODO
+arg' (Deref _ _) = error "TODO"
+arg' _ = Nothing
 
-  read' (Movq _ b) = arg b
-  read' (Addq a b) = arg a <> arg b
-  read' (Subq a b) = arg a <> arg b
-  read' (Negq a) = arg a
-  read' (Pushq a) = arg a
-  read' (Popq _) = mempty
-  read' (Callq "input_int") = Set.empty
-  read' (Callq "print_int") = Set.fromList [Left Rdi]
-  read' (Callq _) = Set.fromList $ Left <$> [Rdi, Rsi, Rdx, Rcx, R8, R9]
-  read' Retq = mempty
+arg :: Arg a v -> Set.HashSet LivenessItem
+arg = Set.fromList . maybeToList . arg'
+
+write :: AsmVar -> Set.HashSet LivenessItem
+write (Movq a _) = arg a
+write (Addq a _) = arg a
+write (Subq a _) = arg a
+write (Negq a) = arg a
+write (Pushq _) = mempty
+write (Popq a) = arg a
+write (Callq _) = Set.fromList $ Left <$> [Rax, Rcx, Rdx, Rsi, Rdi, R8, R9, R10, R11]
+write Retq = mempty
+
+read' :: AsmVar -> Set.HashSet LivenessItem
+read' (Movq _ b) = arg b
+read' (Addq a b) = arg a <> arg b
+read' (Subq a b) = arg a <> arg b
+read' (Negq a) = arg a
+read' (Pushq a) = arg a
+read' (Popq _) = mempty
+read' (Callq "input_int") = Set.empty
+read' (Callq "print_int") = Set.fromList [Left Rdi]
+read' (Callq _) = Set.fromList $ Left <$> [Rdi, Rsi, Rdx, Rcx, R8, R9]
+read' Retq = mempty
+
+-- | special registers always map to the same register after assignRegisters
+-- TODO: lift the restriction
+specialRegisters :: [Reg]
+specialRegisters = [Rax, Rdi, Rsi, Rdx, Rcx, R8, R9]
+
+isSpecial :: LivenessItem -> Bool
+isSpecial (Left r) = r `elem` specialRegisters
+isSpecial (Right _) = False
+
+buildInterferenceGraph :: [AsmVar] -> LivenessTrace -> Set.HashSet (LivenessItem, LivenessItem)
+buildInterferenceGraph asm (_ :| liveness) | length asm /= length liveness = error "buildInterferenceGraph: invalid list sizes"
+buildInterferenceGraph asm (_ :| liveness) =
+  let instruction (Movq (arg' -> Just d) (arg' -> s)) after =
+        Set.fromList
+          [ edge
+          | v <- Set.toList after
+          , v /= d && v `notElem` s
+          -- ignore special registers while building the graph,
+          -- therefore we don't need to ignore them while doing colorGraph
+          , not (isSpecial v || isSpecial d)
+          , edge <- [(v, d), (d, v)]
+          ]
+      instruction (Movq _ _) _ = error "infallible"
+      instruction i after =
+        Set.fromList
+          [ edge
+          | v <- Set.toList after
+          , d <- Set.toList (write i)
+          , v /= d
+          , not (isSpecial v || isSpecial d)
+          , edge <- [(v, d), (d, v)]
+          ]
+   in Set.unions (zipWith instruction asm liveness)
+
+colorGraph :: Set.HashSet (LivenessItem, LivenessItem) -> Map.HashMap LivenessItem Int
+colorGraph g =
+  let adj = Set.foldl' (\acc (from, to) -> Map.insertWith (++) from [to] acc) Map.empty g
+      vertices = Map.keys adj
+      go
+        :: OrdSet.Set (Int, LivenessItem)
+        -> Map.HashMap LivenessItem (OrdSet.Set Int)
+        -> [(LivenessItem, Int)]
+      go (OrdSet.maxView -> Nothing) _ = []
+      go (OrdSet.maxView -> Just ((_, v), nco)) nc =
+        let ns = fromMaybe OrdSet.empty $ nc Map.!? v
+            neighbors = fromMaybe [] $ adj Map.!? v
+            color = findColor ns 0
+            nc' =
+              Map.delete v
+                $ flip Map.union nc
+                  . Map.fromList
+                $ flip mapMaybe neighbors \to ->
+                  (to,) . OrdSet.insert color <$> (nc Map.!? to)
+            getNco ncc =
+              OrdSet.fromList $
+                flip mapMaybe neighbors \to ->
+                  (,to) . OrdSet.size <$> (ncc Map.!? to)
+            nco' = (nco `OrdSet.difference` getNco nc) `OrdSet.union` getNco nc'
+         in (v, color) : go nco' nc'
+      -- aka MEX
+      findColor set i
+        | OrdSet.member i set = findColor set (i + 1)
+        | otherwise = i
+   in Map.fromList $
+        go
+          (OrdSet.fromList $ (0,) <$> vertices)
+          (Map.fromList $ (,mempty) <$> vertices)
+
+assignRegisters :: [AsmVar] -> [AsmVar]
+assignRegisters asm =
+  let graph = buildInterferenceGraph asm (uncoverLive asm )
+      colors = colorGraph graph
+      registers = [Rcx, Rdx, Rbx]
+      assignRegister :: LivenessItem -> Maybe (Arg a v)
+      assignRegister v@(Left a)
+        | isSpecial v = Just (Reg a)
+      assignRegister v =  Reg <$> registers !? fromMaybe 0 (colors Map.!? v)
+      eachArg :: Arg a v -> Arg a v
+      eachArg a@(Reg x) = fromMaybe a $ assignRegister (Left x)
+      eachArg a@(Var x) = fromMaybe a $ assignRegister (Right x)
+      eachArg (Deref _ _) = error "TODO"
+      eachArg (Imm x) = Imm x
+   in flip map asm \case
+        Movq a b -> Movq (eachArg a) (eachArg b)
+        Addq a b -> Addq (eachArg a) (eachArg b)
+        Subq a b -> Subq (eachArg a) (eachArg b)
+        Negq a -> Negq (eachArg a)
+        Pushq a -> Pushq (eachArg a)
+        Popq a -> Popq (eachArg a)
+        Callq x -> Callq x
+        Retq -> Retq
 
 patchInstructions :: [Asm] -> [Asm]
 patchInstructions =

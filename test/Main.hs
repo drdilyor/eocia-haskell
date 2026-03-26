@@ -8,7 +8,9 @@ import Lang
 import Pipeline
 import Pre
 import Target.Asm
+import Target.Interp
 import Target.InterpTests qualified as InterpTests
+import Target.Program
 import Test.Tasty
 import Test.Tasty.HUnit
 import Test.Tasty.QuickCheck
@@ -17,7 +19,7 @@ main :: IO ()
 main = defaultMain tests
 
 tests :: TestTree
-tests = testGroup "tests" [peTests, interpTests, gensymTests, rcoTests, siTests, ahTests, piTests, ulTests, InterpTests.interpAsmTests]
+tests = testGroup "tests" [peTests, interpTests, gensymTests, rcoTests, siTests, arTests, ahTests, piTests, ulTests, InterpTests.interpAsmTests]
 
 peTests :: TestTree
 peTests =
@@ -42,6 +44,27 @@ runInterpL program input =
 
 runInterpSimple :: L -> Either InterpError Int
 runInterpSimple program = fst <$> runInterpL program []
+
+runInterpAsm :: Program -> [Text] -> Either InterpAsmError (Int, [Text])
+runInterpAsm program input =
+  runPureEff
+    . runErrorNoCallStackWith @InterpAsmError (pure . Left)
+    . runErrorNoCallStackWith @LioError (\e -> error . unpack $ "LioError during testing" <> show e)
+    . fmap (\(v, (_, output)) -> Right (v, output))
+    . runLioPure input
+    $ interpAsm program
+
+runInterpAsmSimple :: [Asm] -> [Text] -> Either InterpAsmError (Int, [Text])
+runInterpAsmSimple asm = runInterpAsm (Program{globals = ["_start"], asm = [("_start", asm)]})
+
+runInterpAsmVarSimple :: [AsmVar] -> [Text] -> Either InterpAsmError (Int, [Text])
+runInterpAsmVarSimple asmvar input =
+  runPureEff
+    . runErrorNoCallStackWith @InterpAsmError (pure . Left)
+    . runErrorNoCallStackWith @LioError (\e -> error . unpack $ "LioError during testing" <> show e)
+    . fmap (\(v, (_, output)) -> Right (v, output))
+    . runLioPure input
+    $ interpAsmVar [("_start", asmvar)] "_start"
 
 interpTests :: TestTree
 interpTests =
@@ -222,6 +245,63 @@ ulTests =
     ]
 {- FOURMOLU_DISABLE -}
 
+genInt :: Gen Int
+genInt = let bounds = 10 ^ (3 :: Int) in chooseInt (-bounds, bounds)
+
+genInput :: Gen [Text]
+genInput = map show <$> infiniteListOf genInt
+
+genAsm :: Gen [AsmVar]
+genAsm = ('a':) <$> sublistOf ['b' .. 'h'] >>= (\vars ->
+  let weights = iterate (\x -> x - x `div` 3) 1000
+      genVar :: Gen (Arg a Avar)
+      genVar = frequency . zip weights . map (pure . Var . pack . singleton) $ vars
+      genImm = Imm <$> genInt
+      genSrc = frequency [(2, genImm), (1, genVar)]
+      genDst = genVar
+      genArith =
+        oneof
+          [ Movq <$> genDst <*> genSrc
+          , Addq <$> genDst <*> genSrc
+          , Subq <$> genDst <*> genSrc
+          , Negq <$> genDst
+          ]
+      genIO =
+        oneof
+          [ do
+              v <- genVar
+              pure [Movq rdi v, Callq "print_int"]
+          , do
+              v <- genVar
+              pure [Callq "input_int", Movq rax v]
+          ]
+      genInst = frequency [(4, singleton <$> genArith), (1, genIO)]
+      genInit = forM vars \v -> (Movq . Var . pack . singleton $ v) <$> genImm
+   in concat <$> sequence [genInit, concat <$> listOf1 genInst]) . ('a':)
+
+arTests :: TestTree
+arTests =
+  testGroup
+    "assignRegister"
+    [ testProperty "matches the behaviour of spilling" $
+        forAllShow genAsm (unpack . printAsm) \asm ->
+        forAllShow genInput (unpack . show . take 20) \input ->
+        let asm1 = runPureEff $ assignHomes (assignRegisters asm)
+            asm2 = runPureEff $ assignHomes asm
+            mkProgram = preludeAndConclusion . second patchInstructions
+         in counterexample (unpack . printAsm $ snd asm1) $
+            counterexample (unpack . printAsm $ snd asm2) $
+        let output1 = fmap snd (runInterpAsm (mkProgram asm1) input)
+            output2 = fmap snd (runInterpAsm (mkProgram asm2) input)
+            -- TODO: currently we ignore the value of Rax. removing the fmap after fixing it
+            -- turns out we can't remove it because patchInstructions uses rax
+         in label (unpack $ case output2 of Right _ -> "execution: successful"; Left e -> "execution: failed with " <> show e) $
+            label (unpack $ "has " <> show (length $ fromRight [] output2) <> " lines of output") $
+            label (unpack $ "spilled " <> show (fst asm1 `div` 8) <> " vars") $
+            label (unpack $ "unspilled " <> show ((fst asm2 - fst asm1) `div` 8) <> " vars") $
+            output1 === output2
+    ]
+
 ahTests :: TestTree
 ahTests =
   testGroup
@@ -233,7 +313,14 @@ ahTests =
               , Movq (Deref Rbp (-16)) (Deref Rbp (-8))
               ]
         runPureEff (assignHomes program) @?= (16, expected)
-    ]
+    , testProperty "behaviour is correct" $
+        forAllShow genAsm (unpack . printAsm) \asm ->
+        forAllShow genInput (unpack . show . take 20) \input ->
+        let asm' = runPureEff $ assignHomes asm
+            mkProgram = preludeAndConclusion . second patchInstructions
+         in counterexample (unpack . ("assignHomes asm = \n" <>) . printAsm $ snd asm') $
+            fmap snd (runInterpAsm (mkProgram asm') input) === fmap snd (runInterpAsmVarSimple asm input)
+ ]
 
 piTests :: TestTree
 piTests =

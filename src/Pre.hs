@@ -4,6 +4,7 @@ module Pre (
   module Data.List.NonEmpty,
   module Data.Containers.ListUtils,
   module Data.Maybe,
+  module Data.Either,
   module Data.Monoid,
   module Data.Void,
   module Data.Function,
@@ -39,6 +40,7 @@ import Data.Functor.Foldable.TH (makeBaseFunctor)
 import Data.List hiding (lines, unlines, unwords, words)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Maybe
+import Data.Either
 import Data.Monoid
 import Data.String (IsString (..))
 import Data.Text (Text, lines, pack, show, unlines, unpack, unwords, words, toLower, toUpper)
