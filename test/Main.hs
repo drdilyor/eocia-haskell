@@ -1,5 +1,6 @@
 module Main (main) where
 
+import Data.HashSet qualified as Set
 import Data.Text qualified as T
 import Effects.Gensym
 import Effects.Lio
@@ -16,7 +17,7 @@ main :: IO ()
 main = defaultMain tests
 
 tests :: TestTree
-tests = testGroup "tests" [peTests, interpTests, gensymTests, rcoTests, siTests, ahTests, piTests, InterpTests.interpAsmTests]
+tests = testGroup "tests" [peTests, interpTests, gensymTests, rcoTests, siTests, ahTests, piTests, ulTests, InterpTests.interpAsmTests]
 
 peTests :: TestTree
 peTests =
@@ -187,6 +188,40 @@ siTests =
         runPureEff (runGensym (selectInstructions program)) @?= expected
     ]
 
+{- FOURMOLU_DISABLE -}
+ulTests :: TestTree
+ulTests =
+  testGroup
+    "uncoverLive"
+    [ testCase "empty program" do
+        uncoverLive [] @?= (Set.empty :| [])
+    , testCase "single move" do
+        let program =
+              [ Movq (Var "x") (Imm 1)
+              , Movq (Var "y") (Var "x")
+              ]
+            expected = Set.empty :| [Set.singleton (Right "x"), Set.empty]
+        uncoverLive program @?= expected
+    , testCase "complex case" do
+        let (program, expected) = unzip
+              [ (Movq "v" (Imm 1),  Set.fromList $ Right <$> ["v"])
+              , (Movq "w" (Imm 42), Set.fromList $ Right <$> ["w", "v"])
+              , (Movq "x" "v",      Set.fromList $ Right <$> ["w", "x"])
+              , (Addq "x" (Imm 7),  Set.fromList $ Right <$> ["w", "x"])
+              , (Movq "y" "x",      Set.fromList $ Right <$> ["w", "x", "y"])
+              , (Movq "z" "x",      Set.fromList $ Right <$> ["w", "y", "z"])
+              , (Addq "z" "w",      Set.fromList $ Right <$> ["y", "z"])
+              , (Movq "t0" "y",     Set.fromList $ Right <$> ["t0", "z"])
+              , (Negq "t0",         Set.fromList $ Right <$> ["t0", "z"])
+              , (Movq "t1" "z",     Set.fromList $ Right <$> ["t0", "t1"])
+              , (Addq "t1" "t0",    Set.fromList $ Right <$> ["t1"])
+              , (Movq rdi "t1",     Set.fromList [Left Rdi])
+              , (Callq "print_int", Set.fromList [])
+              ]
+        uncoverLive program @?= (Set.empty :| expected)
+    ]
+{- FOURMOLU_DISABLE -}
+
 ahTests :: TestTree
 ahTests =
   testGroup
@@ -215,6 +250,13 @@ piTests =
               ]
         patchInstructions program @?= expected
     , testCase "patches memory-to-memory mov" do
+        let program = [Movq (Deref Rbp (-8)) (Deref Rbp (-16))]
+            expected =
+              [ Movq (Reg Rax) (Deref Rbp (-16))
+              , Movq (Deref Rbp (-8)) (Reg Rax)
+              ]
+        patchInstructions program @?= expected
+    , testCase "patches memory + big immediate" do
         let program = [Movq (Deref Rbp (-8)) (Deref Rbp (-16))]
             expected =
               [ Movq (Reg Rax) (Deref Rbp (-16))

@@ -27,6 +27,7 @@ common common-settings
                       , StandaloneDeriving
                       , NoFieldSelectors
                       , RecursiveDo
+                      , DeriveAnyClass
     build-depends:    base ^>=4.21.0.0
                     , effectful-core
                     , effectful-plugin
@@ -37,6 +38,8 @@ common common-settings
                     , containers
                     , unordered-containers
                     , vector
+                    , free
+                    , hashable
     default-language: GHC2024
 
 library

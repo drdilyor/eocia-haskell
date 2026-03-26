@@ -2,7 +2,9 @@
 module Pipeline where
 
 import Data.HashMap.Strict qualified as Map
+import Data.HashSet qualified as Set
 import Data.Int
+import Data.List.NonEmpty qualified as NE
 import Effects.Gensym
 import Lang
 import Pre
@@ -156,6 +158,55 @@ assignHomes asmvar = mdo
   argument (Imm x) = pure $ Imm x
   argument (Reg x) = pure $ Reg x
   argument (Deref o x) = pure $ Deref o x
+
+collectVars :: [AsmVar] -> [Text]
+collectVars = concatMap vars
+ where
+  arg :: Arg a v -> [Text]
+  arg (Var x) = [x]
+  arg _ = []
+
+  vars (Addq a b) = arg a <> arg b
+  vars (Subq a b) = arg a <> arg b
+  vars (Negq a) = arg a
+  vars (Movq a b) = arg a <> arg b
+  vars (Pushq a) = arg a
+  vars (Popq a) = arg a
+  vars (Callq _) = mempty
+  vars Retq = mempty
+
+uncoverLive :: [AsmVar] -> NonEmpty (Set.HashSet (Either Reg Text))
+uncoverLive [] = NE.singleton Set.empty
+uncoverLive (inst : rest) =
+  let restLiveness@(after :| _) = uncoverLive rest
+      before = (after `Set.difference` write inst) `Set.union` read' inst
+   in before `NE.cons` restLiveness
+ where
+  arg :: Arg a v -> Set.HashSet (Either Reg Text)
+  arg (Var x) = Set.singleton (Right x)
+  arg (Reg x) = Set.singleton (Left x)
+  arg (Deref x _) = Set.singleton (Left x)
+  arg _ = Set.empty
+
+  write (Movq a _) = arg a
+  write (Addq a _) = arg a
+  write (Subq a _) = arg a
+  write (Negq a) = arg a
+  write (Pushq _) = mempty
+  write (Popq a) = arg a
+  write (Callq _) = Set.fromList $ Left <$> [Rax, Rcx, Rdx, Rsi, Rdi, R8, R9, R10, R11]
+  write Retq = mempty
+
+  read' (Movq _ b) = arg b
+  read' (Addq a b) = arg a <> arg b
+  read' (Subq a b) = arg a <> arg b
+  read' (Negq a) = arg a
+  read' (Pushq a) = arg a
+  read' (Popq _) = mempty
+  read' (Callq "input_int") = Set.empty
+  read' (Callq "print_int") = Set.fromList [Left Rdi]
+  read' (Callq _) = Set.fromList $ Left <$> [Rdi, Rsi, Rdx, Rcx, R8, R9]
+  read' Retq = mempty
 
 patchInstructions :: [Asm] -> [Asm]
 patchInstructions =
