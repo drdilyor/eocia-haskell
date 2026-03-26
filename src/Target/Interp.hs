@@ -1,6 +1,7 @@
 -- | slop
 module Target.Interp (
   interpAsm,
+  interpAsmVar,
   InterpAsmError (..),
 ) where
 
@@ -21,30 +22,42 @@ data InterpAsmError
 data InterpAsmState = InterpAsmState
   { regs :: V.Vector Int
   , mem :: Map.HashMap Int Int
+  , vars :: Map.HashMap Text Int
   , pc :: Int
   }
   deriving (Show)
 
 interpAsm :: (Lio :> es, Error InterpAsmError :> es) => Program -> Eff es Int
-interpAsm prog = do
-  let (asms, labels) = flatten prog
+interpAsm (Program _ blocks) = interpAsmB blocks "_start"
+
+interpAsmVar :: (Lio :> es, Error InterpAsmError :> es) => [(Text, [AsmVar])] -> Text -> Eff es Int
+interpAsmVar blocks start = interpAsmB blocks start
+
+interpAsmB
+  :: (Lio :> es, Error InterpAsmError :> es)
+  => [(Text, [AsmB v])]
+  -> Text
+  -> Eff es Int
+interpAsmB blocks start = do
+  let (asms, labels) = flatten blocks
   let initState =
         InterpAsmState
           { regs = V.replicate 16 0 V.// [(fromEnum Rsp, 1000000), (fromEnum Rbp, 1000000)]
           , mem = Map.fromList [(1000000, -1)] -- return address to halt
-          , pc = fromMaybe 0 (Map.lookup "_start" labels)
+          , vars = Map.empty
+          , pc = fromMaybe 0 (Map.lookup start labels)
           }
   evalState initState (execute asms labels)
 
-flatten :: Program -> (V.Vector Asm, Map.HashMap Text Int)
-flatten (Program _ blocks) = (V.fromList (concatMap snd blocks), Map.fromList labelOffsets)
+flatten :: [(Text, [AsmB v])] -> (V.Vector (AsmB v), Map.HashMap Text Int)
+flatten blocks = (V.fromList (concatMap snd blocks), Map.fromList labelOffsets)
   where
     offsets = scanl (+) 0 (map (length . snd) blocks)
     labelOffsets = zip (map fst blocks) offsets
 
 execute
   :: (State InterpAsmState :> es, Lio :> es, Error InterpAsmError :> es)
-  => V.Vector Asm
+  => V.Vector (AsmB v)
   -> Map.HashMap Text Int
   -> Eff es Int
 execute asms labels = do
@@ -133,15 +146,19 @@ readMem addr = do
 writeMem :: (State InterpAsmState :> es) => Int -> Int -> Eff es ()
 writeMem addr v = modify $ \s -> s{mem = Map.insert addr v s.mem}
 
-evalArg :: (State InterpAsmState :> es, Error InterpAsmError :> es) => Arg a Aint -> Eff es Int
-evalArg (Imm i) = pure i
-evalArg (Reg r) = getReg r
-evalArg (Deref r off) = do
-  base <- getReg r
-  readMem (base + off)
+evalArg :: (State InterpAsmState :> es, Error InterpAsmError :> es) => Arg a v -> Eff es Int
+evalArg = \case
+  Imm i -> pure i
+  Reg r -> getReg r
+  Deref r off -> do
+    base <- getReg r
+    readMem (base + off)
+  Var x -> gets (\s -> Map.lookupDefault 0 x s.vars)
 
-writeArg :: (State InterpAsmState :> es, Error InterpAsmError :> es) => Arg Dst Aint -> Int -> Eff es ()
-writeArg (Reg r) v = setReg r v
-writeArg (Deref r off) v = do
-  base <- getReg r
-  writeMem (base + off) v
+writeArg :: (State InterpAsmState :> es, Error InterpAsmError :> es) => Arg Dst v -> Int -> Eff es ()
+writeArg arg v = case arg of
+  Reg r -> setReg r v
+  Deref r off -> do
+    base <- getReg r
+    writeMem (base + off) v
+  Var x -> modify $ \s -> s{vars = Map.insert x v s.vars}

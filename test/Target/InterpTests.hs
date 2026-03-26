@@ -19,6 +19,15 @@ runInterpAsm program input =
     . runLioPure input
     $ TI.interpAsm program
 
+runInterpAsmVar :: [(Text, [AsmVar])] -> [Text] -> Either TI.InterpAsmError (Int, [Text])
+runInterpAsmVar blocks input =
+  runPureEff
+    . runErrorNoCallStackWith @TI.InterpAsmError (pure . Left)
+    . runErrorNoCallStackWith @LioError (\e -> error . unpack $ "LioError during testing" <> show e)
+    . fmap (\(v, (_, output)) -> Right (v, output))
+    . runLioPure input
+    $ TI.interpAsmVar blocks "_start"
+
 -- | Helper for simple single-block programs starting at _start.
 mkSimpleProg :: [Asm] -> Program
 mkSimpleProg asms = Program ["_start"] [("_start", asms)]
@@ -38,6 +47,38 @@ interpAsmTests =
     , ioTests
     , errorTests
     , edgeCaseTests
+    , asmVarTests
+    ]
+
+asmVarTests :: TestTree
+asmVarTests =
+  testGroup
+    "AsmVar (Variables)"
+    [ testCase "basic variable mov" do
+        let blocks = [("_start", [Movq (Var "x") (Imm 42), Movq rax (Var "x")])]
+        runInterpAsmVar blocks [] @?= Right (42, [])
+    , testCase "variable arithmetic" do
+        let blocks =
+              [ ( "_start"
+                , [ Movq (Var "x") (Imm 10)
+                  , Movq (Var "y") (Imm 20)
+                  , Addq (Var "x") (Var "y")
+                  , Movq rax (Var "x")
+                  ]
+                )
+              ]
+        runInterpAsmVar blocks [] @?= Right (30, [])
+    , testCase "mixing variables and registers" do
+        let blocks =
+              [ ( "_start"
+                , [ Movq (Var "x") (Imm 5)
+                  , Movq rbx (Imm 7)
+                  , Addq (Var "x") rbx
+                  , Movq rax (Var "x")
+                  ]
+                )
+              ]
+        runInterpAsmVar blocks [] @?= Right (12, [])
     ]
 
 arithmeticTests :: TestTree
