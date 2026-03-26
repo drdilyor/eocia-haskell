@@ -41,7 +41,7 @@ import Data.List.NonEmpty (NonEmpty (..))
 import Data.Maybe
 import Data.Monoid
 import Data.String (IsString (..))
-import Data.Text (Text, lines, pack, show, unlines, unpack, unwords, words)
+import Data.Text (Text, lines, pack, show, unlines, unpack, unwords, words, toLower, toUpper)
 import Data.Text.Encoding
 import Data.Text.IO
 import Data.Void

@@ -1,9 +1,9 @@
 module Target.Asm where
 
+import Data.Hashable
 import Data.Ix
 import Data.Kind
-import Data.Hashable
-import Pre hiding (show)
+import Pre
 
 data Argtype = Src | Dst deriving (Eq, Show, Read)
 data Vartype = Avar | Aint deriving (Eq, Show, Read)
@@ -63,6 +63,30 @@ data Reg
 rax, rcx, rdx, rbx, rsp, rbp, rsi, rdi, r8, r9, r10, r11, r12, r13, r14, r15 :: Arg a v
 (rax, rcx, rdx, rbx, rsp, rbp, rsi, rdi, r8, r9, r10, r11, r12, r13, r14, r15) =
   (Reg Rax, Reg Rcx, Reg Rdx, Reg Rbx, Reg Rsp, Reg Rbp, Reg Rsi, Reg Rdi, Reg R8, Reg R9, Reg R10, Reg R11, Reg R12, Reg R13, Reg R14, Reg R15)
+
+printAsm :: [AsmB v] -> Text
+printAsm = unlines . map each
+ where
+  each = \case
+    Addq a b -> "add " <> printArg a <> ", " <> printArg b
+    Subq a b -> "sub " <> printArg a <> ", " <> printArg b
+    Negq a -> "neg " <> printArg a
+    Movq a b -> "mov " <> printArg a <> ", " <> printArg b
+    Pushq b -> "push " <> printArg b
+    Popq a -> "pop " <> printArg a
+    Callq n -> "call " <> n
+    Retq -> "ret"
+
+printArg :: Arg a v -> Text
+printArg (Imm x) = show x
+printArg (Reg x) = toLower $ show x
+printArg (Deref x o) = "qword ptr [" <> toLower (show x) <> offsetText <> "]"
+ where
+  offsetText
+    | o > 0 = " + " <> show o
+    | o < 0 = " - " <> show (-o)
+    | otherwise = ""
+printArg (Var x) = show x
 
 instance Read (Arg Src Aint) where
   readPrec =
