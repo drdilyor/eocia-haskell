@@ -28,6 +28,7 @@ common common-settings
                       , NoFieldSelectors
                       , RecursiveDo
                       , DeriveAnyClass
+                      , OrPatterns
     build-depends:    base ^>=4.21.0.0
                     , effectful-core
                     , effectful-plugin

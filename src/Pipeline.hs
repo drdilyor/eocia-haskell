@@ -74,7 +74,9 @@ selectInstructions (MModule ss) = fmap reverse $ execState [] $ siStmt ss
 
   siBinOp Add = Addq
   siBinOp Sub = Subq
+  siBinOp _ = error "TODOO"
   siUnaryOp USub = Negq
+  siUnaryOp _ = error "TODOO"
 
   siStmt (MLet x (MAtom y) k) = do
     emit [Movq (Var x) (siArg y)]

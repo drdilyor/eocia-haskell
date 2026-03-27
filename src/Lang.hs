@@ -46,11 +46,18 @@ instance IsString Atom where
 
 data UnaryOp
   = USub
+  | Not
   deriving (Eq, Show, Read)
 
 data BinOp
   = Add
   | Sub
+  | And
+  | Or
+  | Eq
+  | Neq
+  | Lt
+  | Le
   deriving (Eq, Show, Read)
 
 data InterpError
@@ -115,12 +122,28 @@ interpExp = cata \case
 interpUnaryOp :: UnaryOp -> V -> V
 interpUnaryOp USub (LitIntV x) = LitIntV (negate x)
 interpUnaryOp USub _ = error ""
+interpUnaryOp Not (LitBoolV x) = LitBoolV (not x)
+interpUnaryOp Not _ = error ""
 
 interpBinOp :: BinOp -> V -> V -> V
 interpBinOp Add (LitIntV x) (LitIntV y) = LitIntV (x + y)
 interpBinOp Add _ _ = error ""
 interpBinOp Sub (LitIntV x) (LitIntV y) = LitIntV (x - y)
 interpBinOp Sub _ _ = error ""
+interpBinOp And (LitBoolV x) (LitBoolV y) = LitBoolV (x && y)
+interpBinOp And _ _ = error ""
+interpBinOp Or (LitBoolV x) (LitBoolV y) = LitBoolV (x || y)
+interpBinOp Or _ _ = error ""
+interpBinOp Eq (LitIntV x) (LitIntV y) = LitBoolV (x == y)
+interpBinOp Eq (LitBoolV x) (LitBoolV y) = LitBoolV (x == y)
+interpBinOp Eq _ _ = error ""
+interpBinOp Neq (LitIntV x) (LitIntV y) = LitBoolV (x /= y)
+interpBinOp Neq (LitBoolV x) (LitBoolV y) = LitBoolV (x /= y)
+interpBinOp Neq _ _ = error ""
+interpBinOp Lt (LitIntV x) (LitIntV y) = LitBoolV (x < y)
+interpBinOp Lt _ _ = error ""
+interpBinOp Le (LitIntV x) (LitIntV y) = LitBoolV (x <= y)
+interpBinOp Le _ _ = error ""
 
 peL :: L -> L
 peL (Module ss) = Module (peStmt ss)
