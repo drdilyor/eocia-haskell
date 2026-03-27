@@ -11,7 +11,7 @@ void print_int(int64_t x) {
     exit(1);
   }
 }
-int input_int() {
+int64_t input_int() {
   int64_t x;
   if (!scanf("%" SCNd64, &x)) {
     fprintf(stderr, "input_int: error: failed to read input: %s\n", strerror(errno));

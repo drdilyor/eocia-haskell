@@ -335,7 +335,7 @@ preludeAndConclusion (fs, asm) =
         [ ("main",)
             [ Pushq rbp
             , Movq rbp rsp
-            , Subq rsp (Imm fs)
+            , Subq rsp (Imm $ ((fs + 15) `div` 16) * 16)
             ]
         , ("main_inner",) asm
         , ("main_conclusion",)
