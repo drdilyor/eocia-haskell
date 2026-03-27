@@ -252,7 +252,7 @@ genInput :: Gen [Text]
 genInput = map show <$> infiniteListOf genInt
 
 genAsm :: Gen [AsmVar]
-genAsm = ('a':) <$> sublistOf ['b' .. 'h'] >>= (\vars ->
+genAsm = sublistOf ['a' .. 'h'] `suchThat` (not . null) >>= (\vars ->
   let weights = iterate (\x -> x - x `div` 3) 1000
       genVar :: Gen (Arg a Avar)
       genVar = frequency . zip weights . map (pure . Var . pack . singleton) $ vars
@@ -293,8 +293,6 @@ arTests =
             counterexample (unpack . printAsm $ snd asm2) $
         let output1 = fmap snd (runInterpAsm (mkProgram asm1) input)
             output2 = fmap snd (runInterpAsm (mkProgram asm2) input)
-            -- TODO: currently we ignore the value of Rax. removing the fmap after fixing it
-            -- turns out we can't remove it because patchInstructions uses rax
          in label (unpack $ case output2 of Right _ -> "execution: successful"; Left e -> "execution: failed with " <> show e) $
             label (unpack $ "has " <> show (length $ fromRight [] output2) <> " lines of output") $
             label (unpack $ "spilled " <> show (fst asm1 `div` 8) <> " vars") $

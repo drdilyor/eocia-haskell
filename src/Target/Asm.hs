@@ -64,6 +64,38 @@ rax, rcx, rdx, rbx, rsp, rbp, rsi, rdi, r8, r9, r10, r11, r12, r13, r14, r15 :: 
 (rax, rcx, rdx, rbx, rsp, rbp, rsi, rdi, r8, r9, r10, r11, r12, r13, r14, r15) =
   (Reg Rax, Reg Rcx, Reg Rdx, Reg Rbx, Reg Rsp, Reg Rbp, Reg Rsi, Reg Rdi, Reg R8, Reg R9, Reg R10, Reg R11, Reg R12, Reg R13, Reg R14, Reg R15)
 
+data SaveType = SaveOuter | SaveInner
+  deriving (Eq, Show, Read, Enum)
+
+saveType :: Reg -> SaveType
+saveType = \case
+  Rax -> SaveOuter
+  Rcx -> SaveOuter
+  Rdx -> SaveOuter
+  Rbx -> SaveInner
+  Rsp -> SaveInner
+  Rbp -> SaveInner
+  Rsi -> SaveOuter
+  Rdi -> SaveOuter
+  R8 -> SaveOuter
+  R9 -> SaveOuter
+  R10 -> SaveOuter
+  R11 -> SaveOuter
+  R12 -> SaveInner
+  R13 -> SaveInner
+  R14 -> SaveInner
+  R15 -> SaveInner
+
+outerSavedRegs, innerSavedRegs :: [Reg]
+(outerSavedRegs, innerSavedRegs) =
+  partition ((SaveOuter ==) . saveType) [Rax .. R15]
+
+argumentRegs :: [Reg]
+argumentRegs = [Rdi, Rsi, Rdx, Rcx, R8, R9]
+
+returnRegs :: [Reg]
+returnRegs = [Rax, Rdx]
+
 printAsm :: [AsmB v] -> Text
 printAsm = unlines . map each
  where
