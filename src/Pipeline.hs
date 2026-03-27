@@ -12,13 +12,29 @@ import Pre
 import Target.Asm
 import Target.Program
 
-msbind :: MStmt -> Text -> MStmt -> MStmt
-msbind s x j = flip cata s \case
-  MExprF e -> MLet x e j
+-- | concatenates two MStmt. in order to use it, provide a name for the potential binding.
+-- along with a callback that accepts the atom that can be used to replace the result of the
+-- first MStmt.
+--
+-- WARNING: the callback must not use the argument more than once.
+--
+-- if the first MStmt ends in an atomic expression, we call the callback with that atom instead of creating a binding.
+
+msbind :: MStmt -> Text -> (Atom -> MStmt) -> MStmt
+msbind s t k = flip cata s \case
+  MExprF (MAtom a) -> k a
+  MExprF e -> MLet t e (k (Name t))
   s' -> embed s'
 
--- >>> msbind (MExpr (MBinOp Add (Lit 1) (Lit 2))) "x" (MExpr (MBinOp Add "x" (Lit 3)))
--- MLet "x" (MBinOp Add (Lit 1) (Lit 2)) (MExpr (MBinOp Add (Name "x") (Lit 3)))
+-- | a version of 'msbind' where we always create a binding. this is useful in rcoStmt of Let.
+msbindSimple :: MStmt -> Text -> MStmt -> MStmt
+msbindSimple s t k = flip cata s \case
+  MExprF e -> MLet t e k
+  s' -> embed s'
+
+-- >>> msbindSimple (MExpr (MBinOp Add (LitInt 1) (LitInt 2))) "x" (MExpr (MBinOp Add "x" (LitInt 3)))
+-- MLet "x" (MBinOp Add (LitInt 1) (LitInt 2)) (MExpr (MBinOp Add (Name "x") (LitInt 3)))
+
 removeComplexOperands :: forall es. (Gensym :> es) => L -> Eff es ML
 removeComplexOperands (Module ss) = MModule <$> rcoStmt ss
  where
@@ -26,40 +42,28 @@ removeComplexOperands (Module ss) = MModule <$> rcoStmt ss
   rcoExpr = \case
     Atom x -> pure $ MExpr (MAtom x)
     InputInt -> pure $ MExpr MInputInt
-    UnaryOp op (Atom x) -> pure $ MExpr (MUnaryOp op x)
     UnaryOp op e -> do
       t <- gensym "t"
       s <- rcoExpr e
-      pure $ msbind s t $ MExpr (MUnaryOp op (Name t))
-    BinOp op (Atom x) (Atom y) -> pure $ MExpr (MBinOp op x y)
-    BinOp op (Atom x) e2 -> do
-      t <- gensym "t"
-      s <- rcoExpr e2
-      pure $ msbind s t $ MExpr (MBinOp op x (Name t))
-    BinOp op e1 (Atom y) -> do
-      t <- gensym "t"
-      s <- rcoExpr e1
-      pure $ msbind s t $ MExpr (MBinOp op (Name t) y)
+      pure $ msbind s t $ \e' -> MExpr (MUnaryOp op e')
     BinOp op e1 e2 -> do
       t1 <- gensym "t"
       t2 <- gensym "t"
       s1 <- rcoExpr e1
       s2 <- rcoExpr e2
-      pure $ msbind s1 t1 $ msbind s2 t2 $ MExpr (MBinOp op (Name t1) (Name t2))
+      pure $ msbind s1 t1 \e1' -> msbind s2 t2 $ \e2' -> MExpr (MBinOp op e1' e2')
 
   rcoStmt :: Stmt -> Eff es MStmt
   rcoStmt (Expr e) = rcoExpr e
-  rcoStmt (Print (Atom a) k) = MPrint a <$> rcoStmt k
   rcoStmt (Print e k) = do
     t <- gensym "t"
     s <- rcoExpr e
     k' <- rcoStmt k
-    pure $ msbind s t $ MPrint (Name t) k'
-  rcoStmt (Let x (Atom a) k) = MLet x (MAtom a) <$> rcoStmt k
+    pure $ msbind s t $ \e' -> MPrint e' k'
   rcoStmt (Let x e k) = do
     s <- rcoExpr e
     k' <- rcoStmt k
-    pure $ msbind s x k'
+    pure $ msbindSimple s x k'
 
 selectInstructions :: forall es. (Gensym :> es) => ML -> Eff es [AsmVar]
 selectInstructions (MModule ss) = fmap reverse $ execState [] $ siStmt ss
