@@ -14,7 +14,7 @@ extra-doc-files:    CHANGELOG.md
 -- extra-source-files:
 
 common common-settings
-    ghc-options: -Wall -fplugin=Effectful.Plugin
+    ghc-options: -Wall -fplugin=Effectful.Plugin -Werror=incomplete-patterns
     default-extensions: BlockArguments
                       , OverloadedRecordDot
                       , RecordWildCards

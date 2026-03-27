@@ -26,7 +26,7 @@ runInterpAsmVar blocks input =
     . runErrorNoCallStackWith @LioError (\e -> error . unpack $ "LioError during testing" <> show e)
     . fmap (\(v, (_, output)) -> Right (v, output))
     . runLioPure input
-    $ TI.interpAsmVar blocks "_start"
+    $ TI.interpAsmVar blocks "main"
 
 -- | Helper for simple single-block programs starting at _start.
 mkSimpleProg :: [Asm] -> Program

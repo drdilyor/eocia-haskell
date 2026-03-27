@@ -327,15 +327,15 @@ patchInstructions =
 preludeAndConclusion :: (Int, [Asm]) -> Program
 preludeAndConclusion (fs, asm) =
   Program
-    { globals = ["_start"]
+    { globals = ["main", "print_int", "input_int"]
     , asm =
-        [ ("_start",)
+        [ ("main",)
             [ Pushq rbp
             , Movq rbp rsp
             , Subq rsp (Imm fs)
             ]
-        , ("main",) asm
-        , ("conclusion",)
+        , ("main_inner",) asm
+        , ("main_conclusion",)
             [ Movq rsp rbp
             , Popq rbp
             , Retq

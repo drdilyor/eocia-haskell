@@ -26,6 +26,7 @@ module Pre (
   module Effectful.State.Static.Local,
   module Effectful.Error.Static,
   module Effectful.Exception,
+  print,
 ) where
 
 import Control.Applicative
@@ -55,3 +56,6 @@ import Effectful.State.Static.Local
 import GHC.Generics (Generic, Generic1, Generically, Generically1)
 import Text.Read hiding (get, (+++))
 import Prelude hiding (appendFile, getContents, getLine, interact, lines, print, putStr, putStrLn, readFile, show, unlines, unwords, words, writeFile)
+
+print :: Show a => a -> IO ()
+print = putStrLn . show

@@ -28,7 +28,7 @@ data InterpAsmState = InterpAsmState
   deriving (Show)
 
 interpAsm :: (Lio :> es, Error InterpAsmError :> es) => Program -> Eff es Int
-interpAsm (Program _ blocks) = interpAsmB blocks "_start"
+interpAsm (Program _ blocks) = interpAsmB blocks "main"
 
 interpAsmVar :: (Lio :> es, Error InterpAsmError :> es) => [(Text, [AsmVar])] -> Text -> Eff es Int
 interpAsmVar blocks start = interpAsmB blocks start
