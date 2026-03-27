@@ -278,7 +278,7 @@ genAsm = sublistOf ['a' .. 'h'] `suchThat` (not . null) >>= (\vars ->
           ]
       genInst = frequency [(4, singleton <$> genArith), (1, genIO)]
       genInit = forM vars \v -> (Movq . Var . pack . singleton $ v) <$> genImm
-   in concat <$> sequence [genInit, concat <$> listOf1 genInst]) . ('a':)
+   in concat <$> sequence [genInit, concat <$> listOf1 genInst])
 
 arTests :: TestTree
 arTests =
