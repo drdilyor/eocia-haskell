@@ -254,12 +254,12 @@ colorGraph g =
             nc' =
               Map.delete v
                 $ flip Map.union nc
-                . Map.fromList
+                  . Map.fromList
                 $ flip mapMaybe neighbors \to ->
                   (to,) . OrdSet.insert color <$> (nc Map.!? to)
             getNco ncc =
-              OrdSet.fromList
-                $ flip mapMaybe neighbors \to ->
+              OrdSet.fromList $
+                flip mapMaybe neighbors \to ->
                   (,to) . OrdSet.size <$> (ncc Map.!? to)
             nco' = (nco `OrdSet.difference` getNco nc) `OrdSet.union` getNco nc'
          in (v, color) : go nco' nc'
@@ -267,8 +267,8 @@ colorGraph g =
       findColor set i
         | OrdSet.member i set = findColor set (i + 1)
         | otherwise = i
-   in Map.fromList
-        $ go
+   in Map.fromList $
+        go
           (OrdSet.fromList $ (0,) <$> vertices)
           (Map.fromList $ (,mempty) <$> vertices)
 
