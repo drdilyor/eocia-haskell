@@ -23,8 +23,20 @@ data Exp
   | BinOp BinOp Exp Exp
   deriving (Eq, Show, Read)
 
-data Atom = Lit Int | Name Text
+data Atom = LitInt Int | LitBool Bool | Name Text
   deriving (Eq, Show, Read)
+
+data V = LitIntV Int | LitBoolV Bool
+  deriving (Eq, Show, Read)
+
+vOfExp :: Exp -> Maybe V
+vOfExp (Atom (LitInt x)) = Just (LitIntV x)
+vOfExp (Atom (LitBool b)) = Just (LitBoolV b)
+vOfExp _ = Nothing
+
+expOfV :: V -> Exp
+expOfV (LitIntV x) = Atom (LitInt x)
+expOfV (LitBoolV b) = Atom (LitBool b)
 
 instance IsString Exp where
   fromString = Atom . fromString
@@ -51,33 +63,44 @@ makeBaseFunctor ''Stmt
 makeBaseFunctor ''Exp
 
 lint :: Int -> Exp
-lint = Atom . Lit
+lint = Atom . LitInt
+
+lbool :: Bool -> Exp
+lbool = Atom . LitBool
 
 newtype InterpEnv
-  = InterpEnv {bindings :: Map.HashMap Text Int}
+  = InterpEnv {bindings :: Map.HashMap Text V}
   deriving (Eq, Show, Read)
 
 initialInterpEnv :: InterpEnv
 initialInterpEnv = InterpEnv Map.empty
 
-lookupBinding :: (State InterpEnv :> es) => Text -> Eff es (Maybe Int)
+lookupBinding :: (State InterpEnv :> es) => Text -> Eff es (Maybe V)
 lookupBinding v = Map.lookup v . (.bindings) <$> get
 
-interpL :: (Lio :> es, Error InterpError :> es) => L -> Eff es Int
+interpL :: (Lio :> es, Error InterpError :> es) => L -> Eff es V
 interpL (Module ss) = evalState initialInterpEnv $ interpStmt ss
 
-interpStmt :: (Lio :> es, State InterpEnv :> es, Error InterpError :> es) => Stmt -> Eff es Int
+interpStmt :: (Lio :> es, State InterpEnv :> es, Error InterpError :> es) => Stmt -> Eff es V
 interpStmt = cata \case
   ExprF e -> interpExp e
-  PrintF e k -> (lioPrintLine . show =<< interpExp e) >> k
+  -- TODO: move this printing and parsing elsewhere
+  PrintF e k -> do
+    v <- interpExp e
+    lioPrintLine case v of
+      LitIntV x -> show x
+      LitBoolV False -> "false"
+      LitBoolV True -> "true"
+    k
   LetF v e k -> do
     x <- interpExp e
     modify \env -> env{bindings = Map.insert v x env.bindings}
     k
 
-interpExp :: forall es. (Lio :> es, State InterpEnv :> es, Error InterpError :> es) => Exp -> Eff es Int
+interpExp :: forall es. (Lio :> es, State InterpEnv :> es, Error InterpError :> es) => Exp -> Eff es V
 interpExp = cata \case
-  (AtomF (Lit x)) -> pure x
+  (AtomF (LitInt x)) -> pure (LitIntV x)
+  (AtomF (LitBool x)) -> pure (LitBoolV x)
   (AtomF (Name v)) ->
     lookupBinding v >>= \case
       Nothing -> throwError (UnboundVariable v)
@@ -86,15 +109,18 @@ interpExp = cata \case
   (BinOpF op x y) -> interpBinOp op <$> x <*> y
   InputIntF ->
     lioInputLine >>= \case
-      (readMaybe . unpack -> Just x) -> pure x
+      (readMaybe . unpack -> Just x) -> pure (LitIntV x)
       s -> throwError . InvalidInput $ "couldn't parse " <> show s
 
-interpUnaryOp :: UnaryOp -> Int -> Int
-interpUnaryOp USub = negate
+interpUnaryOp :: UnaryOp -> V -> V
+interpUnaryOp USub (LitIntV x) = LitIntV (negate x)
+interpUnaryOp USub _ = error ""
 
-interpBinOp :: BinOp -> Int -> Int -> Int
-interpBinOp Add = (+)
-interpBinOp Sub = (-)
+interpBinOp :: BinOp -> V -> V -> V
+interpBinOp Add (LitIntV x) (LitIntV y) = LitIntV (x + y)
+interpBinOp Add _ _ = error ""
+interpBinOp Sub (LitIntV x) (LitIntV y) = LitIntV (x - y)
+interpBinOp Sub _ _ = error ""
 
 peL :: L -> L
 peL (Module ss) = Module (peStmt ss)
@@ -109,9 +135,9 @@ peExp :: Exp -> Exp
 peExp = cata \case
   (AtomF x) -> Atom x
   InputIntF -> InputInt
-  (UnaryOpF op (Atom (Lit x))) -> lint $ interpUnaryOp op x
+  (UnaryOpF op (vOfExp -> Just x)) -> expOfV $ interpUnaryOp op x
   (UnaryOpF op e) -> UnaryOp op e
-  (BinOpF op (Atom (Lit x)) (Atom (Lit y))) -> lint $ interpBinOp op x y
+  (BinOpF op (vOfExp -> Just x) (vOfExp -> Just y)) -> expOfV $ interpBinOp op x y
   (BinOpF op e1 e2) -> BinOp op e1 e2
 
 newtype ML = MModule MStmt
@@ -138,4 +164,7 @@ makeBaseFunctor ''MStmt
 makeBaseFunctor ''MExp
 
 mlint :: Int -> MExp
-mlint x = MAtom (Lit x)
+mlint x = MAtom (LitInt x)
+
+mlbool :: Bool -> Exp
+mlbool = Atom . LitBool

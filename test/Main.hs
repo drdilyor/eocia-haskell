@@ -33,7 +33,7 @@ peTests =
           @?= BinOp Add InputInt (lint 3)
     ]
 
-runInterpL :: L -> [Text] -> Either InterpError (Int, [Text])
+runInterpL :: L -> [Text] -> Either InterpError (V, [Text])
 runInterpL program input =
   runPureEff
     . runErrorNoCallStackWith @InterpError (pure . Left)
@@ -42,7 +42,7 @@ runInterpL program input =
     . runLioPure input
     $ interpL program
 
-runInterpSimple :: L -> Either InterpError Int
+runInterpSimple :: L -> Either InterpError V
 runInterpSimple program = fst <$> runInterpL program []
 
 runInterpAsm :: Program -> [Text] -> Either InterpAsmError (Int, [Text])
@@ -75,14 +75,14 @@ interpTests =
             . Module
             $ Expr (BinOp Add (lint 1) (lint 2))
           )
-          @?= Right 3
+          @?= Right (LitIntV 3)
     , testCase "variables work" do
         ( runInterpSimple
             . Module
             . Let "x" (lint 1)
             $ Expr (BinOp Add "x" (lint 2))
           )
-          @?= Right 3
+          @?= Right (LitIntV 3)
     , testCase "input and output" do
         ( runInterpL
             . Module
@@ -90,7 +90,7 @@ interpTests =
             $ Expr (lint 0)
           )
           ["2"]
-          @?= Right (0, ["3"])
+          @?= Right (LitIntV 0, ["3"])
     ]
 
 genPrefixes :: Gen [Text]
@@ -128,8 +128,8 @@ rcoTests =
                 $ Expr (BinOp Add "x" (lint 2))
             expected =
               MModule
-                . MLet "x" (MUnaryOp USub (Lit 1))
-                $ MExpr (MBinOp Add "x" (Lit 2))
+                . MLet "x" (MUnaryOp USub (LitInt 1))
+                $ MExpr (MBinOp Add "x" (LitInt 2))
         runPureEff (runGensym (removeComplexOperands program)) @?= expected
     , testCase "let with an atom" do
         let program =
@@ -147,7 +147,7 @@ rcoTests =
                 Expr (BinOp Add (UnaryOp USub (lint 1)) InputInt)
             expected =
               MModule
-                . MLet "t1" (MUnaryOp USub (Lit 1))
+                . MLet "t1" (MUnaryOp USub (LitInt 1))
                 . MLet "t2" MInputInt
                 $ MExpr (MBinOp Add "t1" "t2")
         runPureEff (runGensym (removeComplexOperands program)) @?= expected
@@ -157,8 +157,8 @@ rcoTests =
                 Expr (BinOp Add (UnaryOp USub (lint 1)) (lint 2))
             expected =
               MModule
-                . MLet "t1" (MUnaryOp USub (Lit 1))
-                $ MExpr (MBinOp Add "t1" (Lit 2))
+                . MLet "t1" (MUnaryOp USub (LitInt 1))
+                $ MExpr (MBinOp Add "t1" (LitInt 2))
         runPureEff (runGensym (removeComplexOperands program)) @?= expected
     , testCase "print with complex expr" do
         let program =
@@ -167,7 +167,7 @@ rcoTests =
                 $ Expr (lint 0)
             expected =
               MModule
-                . MLet "t1" (MBinOp Add (Lit 1) (Lit 2))
+                . MLet "t1" (MBinOp Add (LitInt 1) (LitInt 2))
                 . MPrint (Name "t1")
                 $ MExpr (mlint 0)
         runPureEff (runGensym (removeComplexOperands program)) @?= expected

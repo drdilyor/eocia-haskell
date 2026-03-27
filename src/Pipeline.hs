@@ -68,7 +68,8 @@ selectInstructions (MModule ss) = fmap reverse $ execState [] $ siStmt ss
   emit x = modify (reverse x <>)
 
   siArg :: Atom -> Arg Src Avar
-  siArg (Lit x) = Imm x
+  siArg (LitInt x) = Imm x
+  siArg (LitBool x) = Imm (fromEnum x)
   siArg (Name x) = Var x
 
   siBinOp Add = Addq

@@ -1,5 +1,5 @@
 {- HLINT ignore "Use <$>" -}
-module Parser (Parser, parseL)
+module Parser
 where
 
 import Control.Monad.Combinators.Expr
@@ -27,12 +27,16 @@ pname = lexeme $ takeWhile1P (Just "alpha") C.isLetter
 pint :: Parser Int
 pint = lexeme L.decimal
 
+pbool :: Parser Bool
+pbool = True <$ symbol "true" <|> False <$ symbol "false"
+
 pterm :: Parser Exp
 pterm =
   asum
     [ InputInt <$ symbol "input"
     , Atom . Name <$> pname
-    , Atom . Lit <$> pint
+    , Atom . LitInt <$> pint
+    , Atom . LitBool <$> pbool
     ]
 
 pexp :: Parser Exp
