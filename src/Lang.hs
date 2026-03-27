@@ -1,5 +1,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 
+{- HLINT ignore "Use newtype instead of data" -}
+
 module Lang where
 
 import Data.HashMap.Strict qualified as Map
@@ -60,11 +62,6 @@ data BinOp
   | Le
   deriving (Eq, Show, Read)
 
-data InterpError
-  = InvalidInput Text
-  | UnboundVariable Text
-  deriving (Eq, Show)
-
 makeBaseFunctor ''L
 makeBaseFunctor ''Stmt
 makeBaseFunctor ''Exp
@@ -74,6 +71,90 @@ lint = Atom . LitInt
 
 lbool :: Bool -> Exp
 lbool = Atom . LitBool
+
+data T = IntT | BoolT
+  deriving (Eq, Show, Read)
+
+-- TODO: better error reporting
+data TypeCheckerError
+  = TypeMismatch Text
+  | UnboundVariable Text
+  deriving (Eq, Show)
+
+newtype TypeCheckerEnv
+  = TypeCheckerEnv {tyEnv :: Map.HashMap Text T}
+  deriving (Eq, Show, Read)
+
+initialTypeCheckerEnv :: TypeCheckerEnv
+initialTypeCheckerEnv = TypeCheckerEnv Map.empty
+
+lookupTyEnv :: ( State TypeCheckerEnv :> es) => Text -> Eff es (Maybe T)
+lookupTyEnv v = Map.lookup v . (.tyEnv) <$> get
+
+newtype TypeChecked a = TypeChecked a
+  deriving (Eq, Show)
+
+-- might have to use Reader or pass it manually instead of state in the future
+typeCheckL :: (Error TypeCheckerError :> es) => L -> Eff es (TypeChecked L)
+typeCheckL (Module ss) =
+  evalState initialTypeCheckerEnv $
+    typeCheckStmt ss >> pure (TypeChecked (Module ss))
+
+typeCheckStmt
+  :: (State TypeCheckerEnv :> es, Error TypeCheckerError :> es)
+  => Stmt -> Eff es ()
+typeCheckStmt (Expr e) = void $ typeCheckExp e
+typeCheckStmt (Let x e k) = do
+  et <- typeCheckExp e
+  modify \env -> env{tyEnv = Map.insert x et env.tyEnv}
+  typeCheckStmt k
+typeCheckStmt (Print e k) = do
+  et <- typeCheckExp e
+  typeCheckEqual IntT et -- currently int only
+  typeCheckStmt k
+
+typeCheckEqual :: (Error TypeCheckerError :> es) => T -> T -> Eff es ()
+typeCheckEqual expected actual =
+  when (expected /= actual) . throwError . TypeMismatch $
+    "expected " <> show expected <> ", found " <> show actual
+
+typeCheckExp
+  :: (State TypeCheckerEnv :> es, Error TypeCheckerError :> es)
+  => Exp -> Eff es T
+typeCheckExp (Atom (LitInt _)) = pure IntT
+typeCheckExp (Atom (LitBool _)) = pure BoolT
+typeCheckExp (Atom (Name x)) = do
+  env <- get
+  case env.tyEnv Map.!? x of
+    Nothing -> throwError $ UnboundVariable x
+    Just xt -> pure xt
+typeCheckExp InputInt = pure IntT
+typeCheckExp (UnaryOp op e) = typeCheckExp e >>= typeCheckEqual argt >> pure rett
+  where
+   (argt, rett) = case op of
+     USub -> (IntT, IntT)
+     Not -> (BoolT, BoolT)
+
+typeCheckExp (BinOp op e1 e2)
+  -- equality is the only polymorphic operation so far
+  | (Eq; Neq) <- op = do
+      t1 <- typeCheckExp e1
+      t2 <- typeCheckExp e2
+      typeCheckEqual t1 t2
+      pure BoolT
+  | otherwise =
+      typeCheckExp e1 >>= typeCheckEqual arg1t >>
+      typeCheckExp e2 >>= typeCheckEqual arg2t >> pure rett
+ where
+  (arg1t, arg2t, rett) = case op of
+    Add; Sub -> (IntT, IntT, IntT)
+    And; Or -> (BoolT, BoolT, BoolT)
+    Lt; Le -> (IntT, IntT, BoolT)
+    Eq; Neq -> error "infallible"
+
+data InterpError
+  = InvalidInput Text
+  deriving (Eq, Show)
 
 newtype InterpEnv
   = InterpEnv {bindings :: Map.HashMap Text V}
@@ -85,8 +166,8 @@ initialInterpEnv = InterpEnv Map.empty
 lookupBinding :: (State InterpEnv :> es) => Text -> Eff es (Maybe V)
 lookupBinding v = Map.lookup v . (.bindings) <$> get
 
-interpL :: (Lio :> es, Error InterpError :> es) => L -> Eff es V
-interpL (Module ss) = evalState initialInterpEnv $ interpStmt ss
+interpL :: (Lio :> es, Error InterpError :> es) => TypeChecked L -> Eff es V
+interpL (TypeChecked (Module ss)) = evalState initialInterpEnv $ interpStmt ss
 
 interpStmt :: (Lio :> es, State InterpEnv :> es, Error InterpError :> es) => Stmt -> Eff es V
 interpStmt = cata \case
@@ -110,7 +191,7 @@ interpExp = cata \case
   (AtomF (LitBool x)) -> pure (LitBoolV x)
   (AtomF (Name v)) ->
     lookupBinding v >>= \case
-      Nothing -> throwError (UnboundVariable v)
+      Nothing -> error "infallible"
       Just x -> pure x
   (UnaryOpF op x) -> interpUnaryOp op <$> x
   (BinOpF op x y) -> interpBinOp op <$> x <*> y

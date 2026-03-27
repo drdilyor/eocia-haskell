@@ -346,8 +346,8 @@ preludeAndConclusion (fs, asm) =
         ]
     }
 
-compile :: L -> Program
-compile l = runPureEff . runGensym $ do
+compile :: L -> Either TypeCheckerError Program
+compile l = runPureEff . runErrorNoCallStack @TypeCheckerError . runGensym $ do
   ml <- removeComplexOperands l
   asmvar <- selectInstructions ml
   (size, asm) <- assignHomes asmvar

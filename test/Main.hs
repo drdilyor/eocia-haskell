@@ -19,7 +19,7 @@ main :: IO ()
 main = defaultMain tests
 
 tests :: TestTree
-tests = testGroup "tests" [peTests, interpTests, gensymTests, rcoTests, siTests, arTests, ahTests, piTests, ulTests, InterpTests.interpAsmTests]
+tests = testGroup "tests" [tcTests, peTests, interpTests, gensymTests, rcoTests, siTests, arTests, ahTests, piTests, ulTests, InterpTests.interpAsmTests]
 
 peTests :: TestTree
 peTests =
@@ -37,10 +37,11 @@ runInterpL :: L -> [Text] -> Either InterpError (V, [Text])
 runInterpL program input =
   runPureEff
     . runErrorNoCallStackWith @InterpError (pure . Left)
-    . runErrorNoCallStackWith @LioError (\e -> error . unpack $ "LioError during testing" <> show e)
+    . runErrorNoCallStackWith @TypeCheckerError (\e -> error . unpack $ "runInterpL: TypeCheckerError during testign: " <> show e)
+    . runErrorNoCallStackWith @LioError (\e -> error . unpack $ "runInterpL: LioError during testing: " <> show e)
     . fmap (\(v, (_, output)) -> Right (v, output))
     . runLioPure input
-    $ interpL program
+    $ interpL =<< typeCheckL program
 
 runInterpSimple :: L -> Either InterpError V
 runInterpSimple program = fst <$> runInterpL program []
@@ -348,4 +349,59 @@ piTests =
               , Movq (Deref Rbp (-8)) (Reg Rax)
               ]
         patchInstructions program @?= expected
+    ]
+
+runTypeCheck :: Stmt -> Either TypeCheckerError ()
+runTypeCheck = runPureEff . runErrorNoCallStack . void . typeCheckL . Module
+
+tcTests :: TestTree
+tcTests =
+  testGroup
+    "typeCheckL"
+    [ testCase "unary operations" do
+        runTypeCheck (Expr (UnaryOp USub (lint 1))) @?= Right ()
+        runTypeCheck (Expr (UnaryOp Not (lbool True))) @?= Right ()
+        assertBool "" (runTypeCheck (Expr (UnaryOp USub (lbool True))) & isLeft)
+        assertBool "" (runTypeCheck (Expr (UnaryOp Not (lint 1))) & isLeft)
+    , testCase "binary arithmetic operations" do
+        runTypeCheck (Expr (BinOp Add (lint 1) (lint 2))) @?= Right ()
+        runTypeCheck (Expr (BinOp Sub (lint 1) (lint 2))) @?= Right ()
+        assertBool "" (runTypeCheck (Expr (BinOp Add (lint 1) (lbool True))) & isLeft)
+        assertBool "" (runTypeCheck (Expr (BinOp Sub (lbool False) (lint 2))) & isLeft)
+    , testCase "binary logical operations" do
+        runTypeCheck (Expr (BinOp And (lbool False) (lbool True))) @?= Right ()
+        runTypeCheck (Expr (BinOp Or (lbool False) (lbool True))) @?= Right ()
+        assertBool "" (runTypeCheck (Expr (BinOp And (lint 1) (lbool True))) & isLeft)
+        assertBool "" (runTypeCheck (Expr (BinOp Or (lbool False) (lint 2))) & isLeft)
+    , testCase "equality is polymorphic" do
+        runTypeCheck (Expr (BinOp Eq (lbool False) (lbool True))) @?= Right ()
+        runTypeCheck (Expr (BinOp Neq (lint 1) (lint 2))) @?= Right ()
+        assertBool "" (runTypeCheck (Expr (BinOp Eq (lbool False) (lint 2))) & isLeft)
+        assertBool "" (runTypeCheck (Expr (BinOp Neq (lint 1) (lbool True))) & isLeft)
+    , testCase "comparison operators" do
+        runTypeCheck (Expr (BinOp Lt (lint 1) (lint 2))) @?= Right ()
+        runTypeCheck (Expr (BinOp Le (lint 1) (lint 2))) @?= Right ()
+        assertBool "" (runTypeCheck (Expr (BinOp Lt (lbool False) (lint 2))) & isLeft)
+        assertBool "" (runTypeCheck (Expr (BinOp Le (lint 1) (lbool True))) & isLeft)
+    , testCase "let binding" do
+        runTypeCheck (Let "x" (lint 1) (Expr (BinOp Add "x" (lint 1)))) @?= Right ()
+        runTypeCheck (Let "x" (lbool True) (Expr (BinOp Or "x" (lbool False)))) @?= Right ()
+    , testCase "unbound variables" do
+        let secret = "gcrst"
+            result = runTypeCheck (Let "x" (lint 1) (Expr (Atom (Name secret))))
+        case result of
+          Left (UnboundVariable msg)
+            | secret `T.isInfixOf` msg -> pure ()
+            | otherwise -> assertFailure "the error must contain the variable name"
+          Left _ -> assertFailure "the error must be an instance of UnboundVariable"
+          Right () -> assertFailure "unbound variables must lead to an error"
+    , testCase "shadowing" do
+        runTypeCheck (Let "x" (lbool False) $ Let "x" (lint 2) $ Expr (BinOp Add "x" (lint 1))) @?= Right ()
+        assertBool "" (runTypeCheck (Let "x" (lint 1) $ Let "x" (lbool True) $ Expr (BinOp Add "x" (lint 1))) & isLeft)
+   , testCase "print" do
+        runTypeCheck (Print (lint 1) (Expr (lint 0))) @?= Right ()
+        assertBool "" (runTypeCheck (Print (lbool False) (Expr (lint 0))) & isLeft)
+    , testCase "last expression can be any type" do
+        runTypeCheck (Expr (lint 0)) @?= Right ()
+        runTypeCheck (Expr (lbool True)) @?= Right ()
     ]

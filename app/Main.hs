@@ -13,4 +13,6 @@ main = do
   case runParser parseL "stdin" source of
     Left e -> putStr . pack $ errorBundlePretty e
     Right l ->
-      putStr . printProgram . compile $ l
+      case compile l of
+        Left e -> print e
+        Right program -> putStr . printProgram $ program
