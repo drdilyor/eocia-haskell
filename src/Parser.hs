@@ -53,13 +53,13 @@ pexp =
       , InfixL (BinOp Sub <$ symbol "-")
       ]
     ,
-      [ InfixN (BinOp Eq <$ symbol "==")
-      , InfixN (BinOp Neq <$ symbol "/=")
-      , InfixN (BinOp Neq <$ symbol "<>")
-      , InfixN (BinOp Lt <$ symbol "<")
-      , InfixN (BinOp Le <$ symbol "<=")
-      , InfixN (flip (BinOp Lt) <$ symbol ">")
-      , InfixN (flip (BinOp Le) <$ symbol ">=")
+      [ InfixN (CmpOp Eq <$ symbol "==")
+      , InfixN (CmpOp Neq <$ symbol "/=")
+      , InfixN (CmpOp Neq <$ symbol "<>")
+      , InfixN (CmpOp Lt <$ symbol "<")
+      , InfixN (CmpOp Le <$ symbol "<=")
+      , InfixN (flip (CmpOp Lt) <$ symbol ">")
+      , InfixN (flip (CmpOp Le) <$ symbol ">=")
       ]
     ,
       [ InfixL (BinOp And <$ symbol "&&")

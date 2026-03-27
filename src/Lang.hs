@@ -23,6 +23,7 @@ data Exp
   | InputInt
   | UnaryOp UnaryOp Exp
   | BinOp BinOp Exp Exp
+  | CmpOp CmpOp Exp Exp
   deriving (Eq, Show, Read)
 
 data Atom = LitInt Int | LitBool Bool | Name Text
@@ -56,7 +57,10 @@ data BinOp
   | Sub
   | And
   | Or
-  | Eq
+  deriving (Eq, Show, Read)
+
+data CmpOp
+  = Eq
   | Neq
   | Lt
   | Le
@@ -110,7 +114,7 @@ typeCheckStmt (Let x e k) = do
   typeCheckStmt k
 typeCheckStmt (Print e k) = do
   et <- typeCheckExp e
-  typeCheckEqual IntT et -- currently int only
+  typeCheckEqual IntT et  -- currently int only
   typeCheckStmt k
 
 typeCheckEqual :: (Error TypeCheckerError :> es) => T -> T -> Eff es ()
@@ -134,23 +138,22 @@ typeCheckExp (UnaryOp op e) = typeCheckExp e >>= typeCheckEqual argt >> pure ret
    (argt, rett) = case op of
      USub -> (IntT, IntT)
      Not -> (BoolT, BoolT)
-
-typeCheckExp (BinOp op e1 e2)
-  -- equality is the only polymorphic operation so far
-  | (Eq; Neq) <- op = do
-      t1 <- typeCheckExp e1
-      t2 <- typeCheckExp e2
-      typeCheckEqual t1 t2
-      pure BoolT
-  | otherwise =
-      typeCheckExp e1 >>= typeCheckEqual arg1t >>
-      typeCheckExp e2 >>= typeCheckEqual arg2t >> pure rett
+typeCheckExp (BinOp op e1 e2) =
+  typeCheckExp e1 >>= typeCheckEqual arg1t >>
+  typeCheckExp e2 >>= typeCheckEqual arg2t >>
+  pure rett
  where
   (arg1t, arg2t, rett) = case op of
     Add; Sub -> (IntT, IntT, IntT)
     And; Or -> (BoolT, BoolT, BoolT)
-    Lt; Le -> (IntT, IntT, BoolT)
-    Eq; Neq -> error "infallible"
+typeCheckExp (CmpOp (Eq; Neq) e1 e2) = do
+  t1 <- typeCheckExp e1
+  t2 <- typeCheckExp e2
+  typeCheckEqual t1 t2 >> pure BoolT
+typeCheckExp (CmpOp (Le; Lt) e1 e2) =
+  typeCheckExp e1 >>= typeCheckEqual IntT >>
+  typeCheckExp e2 >>= typeCheckEqual IntT >>
+  pure BoolT
 
 data InterpError
   = InvalidInput Text
@@ -195,6 +198,7 @@ interpExp = cata \case
       Just x -> pure x
   (UnaryOpF op x) -> interpUnaryOp op <$> x
   (BinOpF op x y) -> interpBinOp op <$> x <*> y
+  (CmpOpF op x y) -> interpCmpOp op <$> x <*> y
   InputIntF ->
     lioInputLine >>= \case
       (readMaybe . unpack -> Just x) -> pure (LitIntV x)
@@ -215,16 +219,18 @@ interpBinOp And (LitBoolV x) (LitBoolV y) = LitBoolV (x && y)
 interpBinOp And _ _ = error ""
 interpBinOp Or (LitBoolV x) (LitBoolV y) = LitBoolV (x || y)
 interpBinOp Or _ _ = error ""
-interpBinOp Eq (LitIntV x) (LitIntV y) = LitBoolV (x == y)
-interpBinOp Eq (LitBoolV x) (LitBoolV y) = LitBoolV (x == y)
-interpBinOp Eq _ _ = error ""
-interpBinOp Neq (LitIntV x) (LitIntV y) = LitBoolV (x /= y)
-interpBinOp Neq (LitBoolV x) (LitBoolV y) = LitBoolV (x /= y)
-interpBinOp Neq _ _ = error ""
-interpBinOp Lt (LitIntV x) (LitIntV y) = LitBoolV (x < y)
-interpBinOp Lt _ _ = error ""
-interpBinOp Le (LitIntV x) (LitIntV y) = LitBoolV (x <= y)
-interpBinOp Le _ _ = error ""
+
+interpCmpOp :: CmpOp -> V -> V -> V
+interpCmpOp Eq (LitIntV x) (LitIntV y) = LitBoolV (x == y)
+interpCmpOp Eq (LitBoolV x) (LitBoolV y) = LitBoolV (x == y)
+interpCmpOp Eq _ _ = error ""
+interpCmpOp Neq (LitIntV x) (LitIntV y) = LitBoolV (x /= y)
+interpCmpOp Neq (LitBoolV x) (LitBoolV y) = LitBoolV (x /= y)
+interpCmpOp Neq _ _ = error ""
+interpCmpOp Lt (LitIntV x) (LitIntV y) = LitBoolV (x < y)
+interpCmpOp Lt _ _ = error ""
+interpCmpOp Le (LitIntV x) (LitIntV y) = LitBoolV (x <= y)
+interpCmpOp Le _ _ = error ""
 
 peL :: L -> L
 peL (Module ss) = Module (peStmt ss)
@@ -243,6 +249,8 @@ peExp = cata \case
   (UnaryOpF op e) -> UnaryOp op e
   (BinOpF op (vOfExp -> Just x) (vOfExp -> Just y)) -> expOfV $ interpBinOp op x y
   (BinOpF op e1 e2) -> BinOp op e1 e2
+  (CmpOpF op (vOfExp -> Just x) (vOfExp -> Just y)) -> expOfV $ interpCmpOp op x y
+  (CmpOpF op e1 e2) -> CmpOp op e1 e2
 
 newtype ML = MModule MStmt
   deriving (Eq, Show, Read)
@@ -258,6 +266,7 @@ data MExp
   | MInputInt
   | MUnaryOp UnaryOp Atom
   | MBinOp BinOp Atom Atom
+  | MCmpOp CmpOp Atom Atom
   deriving (Eq, Show, Read)
 
 instance IsString MExp where

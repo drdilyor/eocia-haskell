@@ -52,6 +52,12 @@ removeComplexOperands (Module ss) = MModule <$> rcoStmt ss
       s1 <- rcoExpr e1
       s2 <- rcoExpr e2
       pure $ msbind s1 t1 \e1' -> msbind s2 t2 $ \e2' -> MExpr (MBinOp op e1' e2')
+    CmpOp op e1 e2 -> do
+      t1 <- gensym "t"
+      t2 <- gensym "t"
+      s1 <- rcoExpr e1
+      s2 <- rcoExpr e2
+      pure $ msbind s1 t1 \e1' -> msbind s2 t2 $ \e2' -> MExpr (MCmpOp op e1' e2')
 
   rcoStmt :: Stmt -> Eff es MStmt
   rcoStmt (Expr e) = rcoExpr e
@@ -103,6 +109,7 @@ selectInstructions (MModule ss) = fmap reverse $ execState [] $ siStmt ss
       , siBinOp op (Var x) (siArg z)
       ]
     siStmt k
+  siStmt (MLet x (MCmpOp op y z) k) = error "TODOO" x op y z k
   siStmt (MLet x (MUnaryOp op (Name y)) k)
     | x == y = do
         emit [siUnaryOp op (Var x)]

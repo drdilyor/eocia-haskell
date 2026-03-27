@@ -374,15 +374,15 @@ tcTests =
         assertBool "" (runTypeCheck (Expr (BinOp And (lint 1) (lbool True))) & isLeft)
         assertBool "" (runTypeCheck (Expr (BinOp Or (lbool False) (lint 2))) & isLeft)
     , testCase "equality is polymorphic" do
-        runTypeCheck (Expr (BinOp Eq (lbool False) (lbool True))) @?= Right ()
-        runTypeCheck (Expr (BinOp Neq (lint 1) (lint 2))) @?= Right ()
-        assertBool "" (runTypeCheck (Expr (BinOp Eq (lbool False) (lint 2))) & isLeft)
-        assertBool "" (runTypeCheck (Expr (BinOp Neq (lint 1) (lbool True))) & isLeft)
+        runTypeCheck (Expr (CmpOp Eq (lbool False) (lbool True))) @?= Right ()
+        runTypeCheck (Expr (CmpOp Neq (lint 1) (lint 2))) @?= Right ()
+        assertBool "" (runTypeCheck (Expr (CmpOp Eq (lbool False) (lint 2))) & isLeft)
+        assertBool "" (runTypeCheck (Expr (CmpOp Neq (lint 1) (lbool True))) & isLeft)
     , testCase "comparison operators" do
-        runTypeCheck (Expr (BinOp Lt (lint 1) (lint 2))) @?= Right ()
-        runTypeCheck (Expr (BinOp Le (lint 1) (lint 2))) @?= Right ()
-        assertBool "" (runTypeCheck (Expr (BinOp Lt (lbool False) (lint 2))) & isLeft)
-        assertBool "" (runTypeCheck (Expr (BinOp Le (lint 1) (lbool True))) & isLeft)
+        runTypeCheck (Expr (CmpOp Lt (lint 1) (lint 2))) @?= Right ()
+        runTypeCheck (Expr (CmpOp Le (lint 1) (lint 2))) @?= Right ()
+        assertBool "" (runTypeCheck (Expr (CmpOp Lt (lbool False) (lint 2))) & isLeft)
+        assertBool "" (runTypeCheck (Expr (CmpOp Le (lint 1) (lbool True))) & isLeft)
     , testCase "let binding" do
         runTypeCheck (Let "x" (lint 1) (Expr (BinOp Add "x" (lint 1)))) @?= Right ()
         runTypeCheck (Let "x" (lbool True) (Expr (BinOp Or "x" (lbool False)))) @?= Right ()
@@ -398,7 +398,7 @@ tcTests =
     , testCase "shadowing" do
         runTypeCheck (Let "x" (lbool False) $ Let "x" (lint 2) $ Expr (BinOp Add "x" (lint 1))) @?= Right ()
         assertBool "" (runTypeCheck (Let "x" (lint 1) $ Let "x" (lbool True) $ Expr (BinOp Add "x" (lint 1))) & isLeft)
-   , testCase "print" do
+    , testCase "print" do
         runTypeCheck (Print (lint 1) (Expr (lint 0))) @?= Right ()
         assertBool "" (runTypeCheck (Print (lbool False) (Expr (lint 0))) & isLeft)
     , testCase "last expression can be any type" do
