@@ -22,7 +22,7 @@ symbol :: Text -> Parser Text
 symbol = L.symbol sc
 
 pname :: Parser Text
-pname = lexeme $ takeWhile1P (Just "alpha") C.isLetter
+pname = lexeme $ takeWhile1P (Just "name") C.isLetter
 
 pint :: Parser Int
 pint = lexeme L.decimal
@@ -37,6 +37,7 @@ pterm =
     , Atom . Name <$> pname
     , Atom . LitInt <$> pint
     , Atom . LitBool <$> pbool
+    , symbol "(" *> pexp <* symbol ")"
     ]
 
 pexp :: Parser Exp
@@ -45,10 +46,24 @@ pexp =
     pterm
     [
       [ Prefix (UnaryOp USub <$ symbol "-")
+      , Prefix (UnaryOp Not <$ symbol "not")
       ]
     ,
       [ InfixL (BinOp Add <$ symbol "+")
       , InfixL (BinOp Sub <$ symbol "-")
+      ]
+    ,
+      [ InfixN (BinOp Eq <$ symbol "==")
+      , InfixN (BinOp Neq <$ symbol "/=")
+      , InfixN (BinOp Neq <$ symbol "<>")
+      , InfixN (BinOp Lt <$ symbol "<")
+      , InfixN (BinOp Le <$ symbol "<=")
+      , InfixN (flip (BinOp Lt) <$ symbol ">")
+      , InfixN (flip (BinOp Le) <$ symbol ">=")
+      ]
+    ,
+      [ InfixL (BinOp And <$ symbol "&&")
+      , InfixL (BinOp Or <$ symbol "||")
       ]
     ]
 
