@@ -87,16 +87,13 @@ newtype TypeCheckerEnv
 initialTypeCheckerEnv :: TypeCheckerEnv
 initialTypeCheckerEnv = TypeCheckerEnv Map.empty
 
-lookupTyEnv :: (State TypeCheckerEnv :> es) => Text -> Eff es (Maybe T)
-lookupTyEnv v = Map.lookup v . (.tyEnv) <$> get
-
 newtype TypeChecked a = TypeChecked a
   deriving (Eq, Show)
 
 -- might have to use Reader or pass it manually instead of state in the future
 typeCheckL :: (Error TypeCheckerError :> es) => L -> Eff es (TypeChecked L)
 typeCheckL (Module ss) =
-  evalState initialTypeCheckerEnv $
+  runReader initialTypeCheckerEnv $
     typeCheckExp ss >> pure (TypeChecked (Module ss))
 
 typeCheckEqual :: (Error TypeCheckerError :> es) => T -> T -> Eff es ()
@@ -105,12 +102,12 @@ typeCheckEqual expected actual =
     "expected " <> show expected <> ", found " <> show actual
 
 typeCheckExp
-  :: (State TypeCheckerEnv :> es, Error TypeCheckerError :> es)
+  :: (Reader TypeCheckerEnv :> es, Error TypeCheckerError :> es)
   => Exp -> Eff es T
 typeCheckExp (Atom (LitInt _)) = pure IntT
 typeCheckExp (Atom (LitBool _)) = pure BoolT
 typeCheckExp (Atom (Name x)) = do
-  env <- get
+  env <- ask
   case env.tyEnv Map.!? x of
     Nothing -> throwError $ UnboundVariable x
     Just xt -> pure xt
@@ -120,12 +117,10 @@ typeCheckExp (UnaryOp op e) = typeCheckExp e >>= typeCheckEqual argt >> pure ret
   (argt, rett) = case op of
     USub -> (IntT, IntT)
     Not -> (BoolT, BoolT)
-typeCheckExp (BinOp op e1 e2) =
-  typeCheckExp e1
-    >>= typeCheckEqual arg1t
-    >> typeCheckExp e2
-    >>= typeCheckEqual arg2t
-    >> pure rett
+typeCheckExp (BinOp op e1 e2) = do
+  typeCheckExp e1 >>= typeCheckEqual arg1t
+  typeCheckExp e2 >>= typeCheckEqual arg2t
+  pure rett
  where
   (arg1t, arg2t, rett) = case op of
     Add; Sub -> (IntT, IntT, IntT)
@@ -140,12 +135,18 @@ typeCheckExp (CmpOp (Le; Lt) e1 e2) = do
   pure BoolT
 typeCheckExp (Let x e k) = do
   et <- typeCheckExp e
-  modify \env -> env{tyEnv = Map.insert x et env.tyEnv}
-  typeCheckExp k
+  local (\env -> env{tyEnv = Map.insert x et env.tyEnv}) do
+    typeCheckExp k
 typeCheckExp (Print e k) = do
   et <- typeCheckExp e
   typeCheckEqual IntT et -- currently int only
   typeCheckExp k
+typeCheckExp (If cond csq alt) = do
+  typeCheckExp cond >>= typeCheckEqual BoolT
+  csqt <- typeCheckExp csq
+  altt <- typeCheckExp alt
+  typeCheckEqual csqt altt
+  pure altt
 
 data InterpError
   = InvalidInput Text
@@ -158,13 +159,13 @@ newtype InterpEnv
 initialInterpEnv :: InterpEnv
 initialInterpEnv = InterpEnv Map.empty
 
-lookupBinding :: (State InterpEnv :> es) => Text -> Eff es (Maybe V)
-lookupBinding v = Map.lookup v . (.bindings) <$> get
+lookupBinding :: (Reader InterpEnv :> es) => Text -> Eff es (Maybe V)
+lookupBinding v = Map.lookup v . (.bindings) <$> ask
 
 interpL :: (Lio :> es, Error InterpError :> es) => TypeChecked L -> Eff es V
-interpL (TypeChecked (Module ss)) = evalState initialInterpEnv $ interpExp ss
+interpL (TypeChecked (Module ss)) = runReader initialInterpEnv $ interpExp ss
 
-interpExp :: forall es. (Lio :> es, State InterpEnv :> es, Error InterpError :> es) => Exp -> Eff es V
+interpExp :: forall es. (Lio :> es, Reader InterpEnv :> es, Error InterpError :> es) => Exp -> Eff es V
 interpExp = cata \case
   AtomF (LitInt x) -> pure (LitIntV x)
   AtomF (LitBool x) -> pure (LitBoolV x)
@@ -177,8 +178,8 @@ interpExp = cata \case
   CmpOpF op x y -> interpCmpOp op <$> x <*> y
   LetF v e k -> do
     x <- e
-    modify \env -> env{bindings = Map.insert v x env.bindings}
-    k
+    local (\env -> env{bindings = Map.insert v x env.bindings}) do
+      k
   InputIntF ->
     lioInputLine >>= \case
       (readMaybe . unpack -> Just x) -> pure (LitIntV x)

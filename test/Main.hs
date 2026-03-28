@@ -79,13 +79,36 @@ interpTests =
             $ BinOp Add (lint 1) (lint 2)
           )
           @?= Right (LitIntV 3)
-    , testCase "variables work" do
+    , testCase "variables" do
         ( runInterpSimple
             . Module
             . Let "x" (lint 1)
             $ BinOp Add "x" (lint 2)
           )
           @?= Right (LitIntV 3)
+    , testCase "shadowing" do
+        ( runInterpSimple
+            . Module
+            . Let "x" (lint 1)
+            . Let "x" (lint 2)
+            $ "x"
+          )
+          @?= Right (LitIntV 2)
+        ( runInterpSimple
+            . Module
+            . Let "x" (lint 1)
+            . Let "x" (Let "x" (lint 2) "x")
+            $ "x"
+          )
+          @?= Right (LitIntV 2)
+    , testCase "nested let doesn't escape the scope" do
+        ( runInterpSimple
+            . Module
+            . Let "y" (lint 1)
+            . Let "x" (Let "y" (lint 2) (lint 3))
+            $ "y"
+          )
+          @?= Right (LitIntV 1)
     , testCase "input and output" do
         ( runInterpL
             . Module
@@ -408,6 +431,9 @@ tcTests =
     , testCase "shadowing" do
         runTypeCheck (Let "x" (lbool False) $ Let "x" (lint 2) $ BinOp Add "x" (lint 1)) @?= Right ()
         assertBool "" (runTypeCheck (Let "x" (lint 1) $ Let "x" (lbool True) $ BinOp Add "x" (lint 1)) & isLeft)
+        runTypeCheck (Let "x" (lbool True) $ Let "x" (Let "x" (lint 1) (CmpOp Eq "x" (lint 1))) (lint 1)) @?= Right ()
+    , testCase "nested let doesn't escape scope" do
+        runTypeCheck (Let "y" (lbool True) $ Let "x" (Let "y" (lint 1) (lint 2)) $ CmpOp Eq "y" (lbool True)) @?= Right ()
     , testCase "print" do
         runTypeCheck (Print (lint 1) (lint 0)) @?= Right ()
         assertBool "" (runTypeCheck (Print (lbool False) (lint 0)) & isLeft)
