@@ -15,6 +15,8 @@ import Test.Tasty
 import Test.Tasty.HUnit
 import Test.Tasty.QuickCheck
 
+{- FOURMOLU_DISABLE -}
+
 main :: IO ()
 main = defaultMain tests
 
@@ -74,21 +76,21 @@ interpTests =
     [ testCase "basic arithmetic" do
         ( runInterpSimple
             . Module
-            $ Expr (BinOp Add (lint 1) (lint 2))
+            $ BinOp Add (lint 1) (lint 2)
           )
           @?= Right (LitIntV 3)
     , testCase "variables work" do
         ( runInterpSimple
             . Module
             . Let "x" (lint 1)
-            $ Expr (BinOp Add "x" (lint 2))
+            $ BinOp Add "x" (lint 2)
           )
           @?= Right (LitIntV 3)
     , testCase "input and output" do
         ( runInterpL
             . Module
             . Print (BinOp Add (lint 1) InputInt)
-            $ Expr (lint 0)
+            $ lint 0
           )
           ["2"]
           @?= Right (LitIntV 0, ["3"])
@@ -103,19 +105,18 @@ gensymTests =
     "gensym"
     [ testProperty "respects prefixes" $
         forAll genPrefixes \prefixes ->
-          classify (compareLength (nubOrd prefixes) 1 == GT) "distinct horses" $
-            let prop = conjoin $ zipWith checkPrefix prefixes syms
-                syms = runPureEff (runGensym (mapM gensym prefixes))
-                checkPrefix prefix sym =
-                  counterexample (unpack $ "gensym " <> show prefix <> " -> " <> show sym) $
-                    T.isPrefixOf prefix sym
-             in prop
+            classify (compareLength (nubOrd prefixes) 1 == GT) "distinct horses" $
+        let syms = runPureEff (runGensym (mapM gensym prefixes))
+         in conjoin $ flip map (zip prefixes syms) \(prefix, sym) ->
+            counterexample (unpack $ "gensym " <> show prefix <> " -> " <> show sym) $
+            T.isPrefixOf prefix sym
+
     , testProperty "distinct prefixes" $
         forAll genPrefixes \prefixes ->
-          classify (nubOrd prefixes /= prefixes) "duplicate prefixes" $
+            classify (nubOrd prefixes /= prefixes) "duplicate prefixes" $
             counterexample (unpack $ show prefixes) $
-              let syms = runPureEff (runGensym (mapM gensym prefixes))
-               in nubOrd syms == syms
+        let syms = runPureEff (runGensym (mapM gensym prefixes))
+         in nubOrd syms == syms
     ]
 
 rcoTests :: TestTree
@@ -126,51 +127,61 @@ rcoTests =
         let program =
               Module
                 . Let "x" (UnaryOp USub (lint 1))
-                $ Expr (BinOp Add "x" (lint 2))
+                $ BinOp Add "x" (lint 2)
             expected =
               MModule
                 . MLet "x" (MUnaryOp USub (LitInt 1))
-                $ MExpr (MBinOp Add "x" (LitInt 2))
+                $ MBinOp Add "x" (LitInt 2)
         runPureEff (runGensym (removeComplexOperands program)) @?= expected
     , testCase "let with an atom" do
         let program =
               Module
                 . Let "x" (lint 1)
-                $ Expr (lint 2)
+                $ lint 2
             expected =
               MModule
                 . MLet "x" (mlint 1)
-                $ MExpr (mlint 2)
+                $ mlint 2
         runPureEff (runGensym (removeComplexOperands program)) @?= expected
     , testCase "binop with 2 complex operands" do
         let program =
               Module $
-                Expr (BinOp Add (UnaryOp USub (lint 1)) InputInt)
+                BinOp Add (UnaryOp USub (lint 1)) InputInt
             expected =
               MModule
                 . MLet "t1" (MUnaryOp USub (LitInt 1))
-                . MLet "t2" MInputInt
-                $ MExpr (MBinOp Add "t1" "t2")
+                . MLet "t3" MInputInt
+                $ MBinOp Add "t1" "t3"
         runPureEff (runGensym (removeComplexOperands program)) @?= expected
     , testCase "binop with 1 complex operand" do
         let program =
               Module $
-                Expr (BinOp Add (UnaryOp USub (lint 1)) (lint 2))
+                BinOp Add (UnaryOp USub (lint 1)) (lint 2)
             expected =
               MModule
                 . MLet "t1" (MUnaryOp USub (LitInt 1))
-                $ MExpr (MBinOp Add "t1" (LitInt 2))
+                $ MBinOp Add "t1" (LitInt 2)
         runPureEff (runGensym (removeComplexOperands program)) @?= expected
     , testCase "print with complex expr" do
         let program =
               Module
                 . Print (BinOp Add (lint 1) (lint 2))
-                $ Expr (lint 0)
+                $ lint 0
             expected =
               MModule
                 . MLet "t1" (MBinOp Add (LitInt 1) (LitInt 2))
                 . MPrint (Name "t1")
-                $ MExpr (mlint 0)
+                $ mlint 0
+        runPureEff (runGensym (removeComplexOperands program)) @?= expected
+    , testCase "nested let" do
+        let program =
+              Module
+                . Let "x" (Let "y" (BinOp Add (lint 1) (lint 1)) (BinOp Add "y" (lint 1)))
+                $ BinOp Add "x" (lint 10)
+            expected =
+              MModule
+                . MLet "x" (MLet "y" (MBinOp Add (LitInt 1) (LitInt 1)) (MBinOp Add "y" (LitInt 1)))
+                $ MBinOp Add "x" (LitInt 10)
         runPureEff (runGensym (removeComplexOperands program)) @?= expected
     ]
 
@@ -179,21 +190,21 @@ siTests =
   testGroup
     "selectInstructions"
     [ testCase "basic move" do
-        let program = MModule (MLet "x" (mlint 1) (MExpr (MAtom (Name "x"))))
+        let program = MModule (MLet "x" (mlint 1) (MAtom (Name "x")))
             expected =
               [ Movq (Var "x") (Imm 1)
               , Movq (Reg Rax) (Var "x")
               ]
         runPureEff (runGensym (selectInstructions program)) @?= expected
     , testCase "binop x = x + y" do
-        let program = MModule (MLet "x" (MBinOp Add (Name "x") (Name "y")) (MExpr (MAtom (Name "x"))))
+        let program = MModule (MLet "x" (MBinOp Add (Name "x") (Name "y")) (MAtom (Name "x")))
             expected =
               [ Addq (Var "x") (Var "y")
               , Movq (Reg Rax) (Var "x")
               ]
         runPureEff (runGensym (selectInstructions program)) @?= expected
     , testCase "binop x = y + x" do
-        let program = MModule (MLet "x" (MBinOp Sub (Name "y") (Name "x")) (MExpr (MAtom (Name "x"))))
+        let program = MModule (MLet "x" (MBinOp Sub (Name "y") (Name "x")) (MAtom (Name "x")))
             expected =
               [ Movq (Var "t1") (Var "y")
               , Subq (Var "t1") (Var "x")
@@ -202,7 +213,7 @@ siTests =
               ]
         runPureEff (runGensym (selectInstructions program)) @?= expected
     , testCase "unary op x = -y" do
-        let program = MModule (MLet "x" (MUnaryOp USub (Name "y")) (MExpr (MAtom (Name "x"))))
+        let program = MModule (MLet "x" (MUnaryOp USub (Name "y")) (MAtom (Name "x")))
             expected =
               [ Movq (Var "x") (Var "y")
               , Negq (Var "x")
@@ -244,7 +255,6 @@ ulTests =
               ]
         uncoverLive program @?= (Set.empty :| expected)
     ]
-{- FOURMOLU_DISABLE -}
 
 genInt :: Gen Int
 genInt = let bounds = 10 ^ (3 :: Int) in chooseInt (-bounds, bounds)
@@ -351,7 +361,7 @@ piTests =
         patchInstructions program @?= expected
     ]
 
-runTypeCheck :: Stmt -> Either TypeCheckerError ()
+runTypeCheck :: Exp -> Either TypeCheckerError ()
 runTypeCheck = runPureEff . runErrorNoCallStack . void . typeCheckL . Module
 
 tcTests :: TestTree
@@ -359,36 +369,36 @@ tcTests =
   testGroup
     "typeCheckL"
     [ testCase "unary operations" do
-        runTypeCheck (Expr (UnaryOp USub (lint 1))) @?= Right ()
-        runTypeCheck (Expr (UnaryOp Not (lbool True))) @?= Right ()
-        assertBool "" (runTypeCheck (Expr (UnaryOp USub (lbool True))) & isLeft)
-        assertBool "" (runTypeCheck (Expr (UnaryOp Not (lint 1))) & isLeft)
+        runTypeCheck (UnaryOp USub (lint 1)) @?= Right ()
+        runTypeCheck (UnaryOp Not (lbool True)) @?= Right ()
+        assertBool "" (runTypeCheck (UnaryOp USub (lbool True)) & isLeft)
+        assertBool "" (runTypeCheck (UnaryOp Not (lint 1)) & isLeft)
     , testCase "binary arithmetic operations" do
-        runTypeCheck (Expr (BinOp Add (lint 1) (lint 2))) @?= Right ()
-        runTypeCheck (Expr (BinOp Sub (lint 1) (lint 2))) @?= Right ()
-        assertBool "" (runTypeCheck (Expr (BinOp Add (lint 1) (lbool True))) & isLeft)
-        assertBool "" (runTypeCheck (Expr (BinOp Sub (lbool False) (lint 2))) & isLeft)
+        runTypeCheck (BinOp Add (lint 1) (lint 2)) @?= Right ()
+        runTypeCheck (BinOp Sub (lint 1) (lint 2)) @?= Right ()
+        assertBool "" (runTypeCheck (BinOp Add (lint 1) (lbool True)) & isLeft)
+        assertBool "" (runTypeCheck (BinOp Sub (lbool False) (lint 2)) & isLeft)
     , testCase "binary logical operations" do
-        runTypeCheck (Expr (BinOp And (lbool False) (lbool True))) @?= Right ()
-        runTypeCheck (Expr (BinOp Or (lbool False) (lbool True))) @?= Right ()
-        assertBool "" (runTypeCheck (Expr (BinOp And (lint 1) (lbool True))) & isLeft)
-        assertBool "" (runTypeCheck (Expr (BinOp Or (lbool False) (lint 2))) & isLeft)
+        runTypeCheck (BinOp And (lbool False) (lbool True)) @?= Right ()
+        runTypeCheck (BinOp Or (lbool False) (lbool True)) @?= Right ()
+        assertBool "" (runTypeCheck (BinOp And (lint 1) (lbool True)) & isLeft)
+        assertBool "" (runTypeCheck (BinOp Or (lbool False) (lint 2)) & isLeft)
     , testCase "equality is polymorphic" do
-        runTypeCheck (Expr (CmpOp Eq (lbool False) (lbool True))) @?= Right ()
-        runTypeCheck (Expr (CmpOp Neq (lint 1) (lint 2))) @?= Right ()
-        assertBool "" (runTypeCheck (Expr (CmpOp Eq (lbool False) (lint 2))) & isLeft)
-        assertBool "" (runTypeCheck (Expr (CmpOp Neq (lint 1) (lbool True))) & isLeft)
+        runTypeCheck (CmpOp Eq (lbool False) (lbool True)) @?= Right ()
+        runTypeCheck (CmpOp Neq (lint 1) (lint 2)) @?= Right ()
+        assertBool "" (runTypeCheck (CmpOp Eq (lbool False) (lint 2)) & isLeft)
+        assertBool "" (runTypeCheck (CmpOp Neq (lint 1) (lbool True)) & isLeft)
     , testCase "comparison operators" do
-        runTypeCheck (Expr (CmpOp Lt (lint 1) (lint 2))) @?= Right ()
-        runTypeCheck (Expr (CmpOp Le (lint 1) (lint 2))) @?= Right ()
-        assertBool "" (runTypeCheck (Expr (CmpOp Lt (lbool False) (lint 2))) & isLeft)
-        assertBool "" (runTypeCheck (Expr (CmpOp Le (lint 1) (lbool True))) & isLeft)
+        runTypeCheck (CmpOp Lt (lint 1) (lint 2)) @?= Right ()
+        runTypeCheck (CmpOp Le (lint 1) (lint 2)) @?= Right ()
+        assertBool "" (runTypeCheck (CmpOp Lt (lbool False) (lint 2)) & isLeft)
+        assertBool "" (runTypeCheck (CmpOp Le (lint 1) (lbool True)) & isLeft)
     , testCase "let binding" do
-        runTypeCheck (Let "x" (lint 1) (Expr (BinOp Add "x" (lint 1)))) @?= Right ()
-        runTypeCheck (Let "x" (lbool True) (Expr (BinOp Or "x" (lbool False)))) @?= Right ()
+        runTypeCheck (Let "x" (lint 1) (BinOp Add "x" (lint 1))) @?= Right ()
+        runTypeCheck (Let "x" (lbool True) (BinOp Or "x" (lbool False))) @?= Right ()
     , testCase "unbound variables" do
         let secret = "gcrst"
-            result = runTypeCheck (Let "x" (lint 1) (Expr (Atom (Name secret))))
+            result = runTypeCheck (Let "x" (lint 1) (Atom (Name secret)))
         case result of
           Left (UnboundVariable msg)
             | secret `T.isInfixOf` msg -> pure ()
@@ -396,12 +406,12 @@ tcTests =
           Left _ -> assertFailure "the error must be an instance of UnboundVariable"
           Right () -> assertFailure "unbound variables must lead to an error"
     , testCase "shadowing" do
-        runTypeCheck (Let "x" (lbool False) $ Let "x" (lint 2) $ Expr (BinOp Add "x" (lint 1))) @?= Right ()
-        assertBool "" (runTypeCheck (Let "x" (lint 1) $ Let "x" (lbool True) $ Expr (BinOp Add "x" (lint 1))) & isLeft)
+        runTypeCheck (Let "x" (lbool False) $ Let "x" (lint 2) $ BinOp Add "x" (lint 1)) @?= Right ()
+        assertBool "" (runTypeCheck (Let "x" (lint 1) $ Let "x" (lbool True) $ BinOp Add "x" (lint 1)) & isLeft)
     , testCase "print" do
-        runTypeCheck (Print (lint 1) (Expr (lint 0))) @?= Right ()
-        assertBool "" (runTypeCheck (Print (lbool False) (Expr (lint 0))) & isLeft)
+        runTypeCheck (Print (lint 1) (lint 0)) @?= Right ()
+        assertBool "" (runTypeCheck (Print (lbool False) (lint 0)) & isLeft)
     , testCase "last expression can be any type" do
-        runTypeCheck (Expr (lint 0)) @?= Right ()
-        runTypeCheck (Expr (lbool True)) @?= Right ()
+        runTypeCheck (lint 0) @?= Right ()
+        runTypeCheck (lbool True) @?= Right ()
     ]
