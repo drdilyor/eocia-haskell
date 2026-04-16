@@ -24,6 +24,7 @@ module Pre (
   module Effectful,
   module Effectful.Dispatch.Dynamic,
   module Effectful.State.Static.Local,
+  module Effectful.Reader.Static,
   module Effectful.Error.Static,
   module Effectful.Exception,
   print,
@@ -53,6 +54,7 @@ import Effectful.Dispatch.Dynamic
 import Effectful.Error.Static
 import Effectful.Exception
 import Effectful.State.Static.Local
+import Effectful.Reader.Static
 import GHC.Generics (Generic, Generic1, Generically, Generically1)
 import Text.Read hiding (get, (+++))
 import Prelude hiding (appendFile, getContents, getLine, interact, lines, print, putStr, putStrLn, readFile, show, unlines, unwords, words, writeFile)

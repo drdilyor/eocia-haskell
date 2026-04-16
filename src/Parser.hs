@@ -34,10 +34,21 @@ pterm :: Parser Exp
 pterm =
   asum
     [ InputInt <$ symbol "input"
+    , symbol "(" *> pexp <* symbol ")"
+    , pure Let
+        <*> (symbol "let" *> pname <* symbol "=")
+        <*> (pexp <* symbol "in")
+        <*> pexp
+    , pure Print
+        <*> (symbol "print" *> pexp <* symbol "in")
+        <*> pexp
+    , pure If
+        <*> (symbol "if" *> pexp)
+        <*> (symbol "then" *> pexp)
+        <*> (symbol "else" *> pexp)
     , Atom . Name <$> pname
     , Atom . LitInt <$> pint
     , Atom . LitBool <$> pbool
-    , symbol "(" *> pexp <* symbol ")"
     ]
 
 pexp :: Parser Exp
@@ -67,18 +78,6 @@ pexp =
       ]
     ]
 
-pstmt :: Parser Stmt
-pstmt =
-  asum
-    [ pure Let
-        <*> (symbol "let" *> pname <* symbol "=")
-        <*> (pexp <* symbol "in")
-        <*> pstmt
-    , pure Print
-        <*> (symbol "print" *> pexp <* symbol "in")
-        <*> pstmt
-    , Expr <$> pexp
-    ]
 
 parseL :: Parser L
-parseL = Module <$> pstmt
+parseL = Module <$> pexp
