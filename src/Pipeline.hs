@@ -70,6 +70,8 @@ removeComplexOperands (Module ss) =
       pure $ msbind me t $ \ae -> MPrint ae mk
     -- no need to flatten Let
     LetF x e k -> MLet x <$> e <*> k
+    IfF cond csq alt -> do
+      pure undefined
 
 selectInstructions :: forall es. (Gensym :> es) => ML -> Eff es [AsmVar]
 selectInstructions (MModule ss) = fmap reverse $ execState [] $ siStmt ss

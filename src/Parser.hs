@@ -42,6 +42,10 @@ pterm =
     , pure Print
         <*> (symbol "print" *> pexp <* symbol "in")
         <*> pexp
+    , pure If
+        <*> (symbol "if" *> pexp)
+        <*> (symbol "then" *> pexp)
+        <*> (symbol "else" *> pexp)
     , Atom . Name <$> pname
     , Atom . LitInt <$> pint
     , Atom . LitBool <$> pbool

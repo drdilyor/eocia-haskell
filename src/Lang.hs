@@ -20,6 +20,7 @@ data Exp
   | CmpOp CmpOp Exp Exp
   | Print Exp Exp
   | Let Text Exp Exp
+  | If Exp Exp Exp
   deriving (Eq, Show, Read)
 
 data Atom = LitInt Int | LitBool Bool | Name Text
@@ -192,6 +193,13 @@ interpExp = cata \case
       LitBoolV False -> "false"
       LitBoolV True -> "true"
     k
+  IfF cond csq alt ->
+    -- note: this must use monads and can't be done with liftA3
+    -- because only one branch can be taken
+    cond >>= \case
+      LitBoolV True -> csq
+      LitBoolV False -> alt
+      _ -> error ""
 
 interpUnaryOp :: UnaryOp -> V -> V
 interpUnaryOp USub (LitIntV x) = LitIntV (negate x)
@@ -229,6 +237,7 @@ peExp = cata \case
   (UnaryOpF op (vOfExp -> Just x)) -> expOfV $ interpUnaryOp op x
   (BinOpF op (vOfExp -> Just x) (vOfExp -> Just y)) -> expOfV $ interpBinOp op x y
   (CmpOpF op (vOfExp -> Just x) (vOfExp -> Just y)) -> expOfV $ interpCmpOp op x y
+  (IfF (vOfExp -> Just (LitBoolV cond)) csq alt) -> if cond then csq else alt
   x -> embed x
 
 newtype ML = MModule MExp
