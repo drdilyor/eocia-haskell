@@ -264,3 +264,27 @@ mlint x = MAtom (LitInt x)
 
 mlbool :: Bool -> Exp
 mlbool = Atom . LitBool
+
+type Label = Text
+
+data A = A
+  { blocks :: Map.HashMap Label AStmt
+  }
+  deriving (Eq, Show, Read)
+
+data AStmt
+  = Expr AExpr AStmt
+  | Assign Text AExpr AStmt
+  | Return Exp
+  | Goto Label
+  | AIf CmpOp Atom Atom Label Label
+  deriving (Eq, Show, Read)
+
+data AExpr
+  = AAtom Atom
+  | AInputInt
+  | AUnaryOp UnaryOp Atom
+  | ABinOp BinOp Atom Atom
+  | ACmpOp CmpOp Atom Atom
+  | APrint Atom
+  deriving (Eq, Show, Read)
