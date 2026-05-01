@@ -69,8 +69,9 @@ pexp =
       , InfixN (CmpOp Neq <$ symbol "<>")
       , InfixN (CmpOp Lt <$ symbol "<")
       , InfixN (CmpOp Le <$ symbol "<=")
-      , InfixN (flip (CmpOp Lt) <$ symbol ">")
-      , InfixN (flip (CmpOp Le) <$ symbol ">=")
+      -- these are unsafe transformations. TODO: add dedicated CmpOp.
+      -- , InfixN (flip (CmpOp Lt) <$ symbol ">")
+      -- , InfixN (flip (CmpOp Le) <$ symbol ">=")
       ]
     ,
       [ InfixL (BinOp And <$ symbol "&&")
