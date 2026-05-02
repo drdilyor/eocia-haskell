@@ -49,8 +49,53 @@ removeComplexOperands (Module ss) = MModule <$> rco ss
     If cond csq alt ->
       MIf <$> rco cond <*> rco csq <*> rco alt
 
+explicateControl :: forall es. (Gensym :> es) => ML -> Eff es A
+explicateControl (MModule ss) = do
+  (root, blocks) <- runState Map.empty $ mkBlock =<< ecTail ss
+  pure $ A {root, blocks}
+ where
+  mkBlock :: AStmt -> Eff (State (Map.HashMap Label AStmt) : es) Label
+  mkBlock s = do
+    label <- gensym "b"
+    modify $ Map.insert label s
+    pure label
 
+  ecAssign :: Text -> MExp -> AStmt -> Eff (State (Map.HashMap Label AStmt) : es) AStmt
+  ecAssign t e k = case e of
+    MAtom x -> pure $ Assign t (AAtom x) k
+    MInputInt -> pure $ Assign t AInputInt k
+    MUnaryOp op x -> pure $ Assign t (AUnaryOp op x) k
+    MBinOp op x1 x2 -> pure $ Assign t (ABinOp op x1 x2) k
+    MCmpOp op x1 x2 -> pure $ Assign t (ACmpOp op x1 x2) k
+    MLet t' e' k' -> ecAssign t' e' =<< ecAssign t k' k
+    MPrint x k' -> Expr (APrint x) <$> ecAssign t k' k
+    MIf cond csq alt -> do
+      (t1, t2) <- liftA2 (,) (gensym "t") (gensym "t")
+      cont' <- mkBlock k
+      csq' <- mkBlock =<< ecAssign t1 csq (Goto cont')
+      alt' <- mkBlock =<< ecAssign t2 alt (Goto cont')
+      ecPred cond csq' alt'
 
+  ecTail :: MExp -> Eff (State (Map.HashMap Label AStmt) : es) AStmt
+  ecTail = \case
+    MAtom x -> pure $ Return (AAtom x)
+    MInputInt -> pure $ Return AInputInt
+    MUnaryOp op x -> pure $ Return (AUnaryOp op x)
+    MBinOp op x1 x2 -> pure $ Return (ABinOp op x1 x2)
+    MCmpOp op x1 x2 -> pure $ Return (ACmpOp op x1 x2)
+    MLet x e k -> ecAssign x e =<< ecTail k
+    MPrint x k -> Expr (APrint x) <$> ecTail k
+    MIf cond csq alt -> do
+      csq' <- mkBlock =<< ecTail csq
+      alt' <- mkBlock =<< ecTail alt
+      ecPred cond csq' alt'
+
+  ecPred :: MExp -> Label -> Label -> Eff (State (Map.HashMap Label AStmt) : es) AStmt
+  ecPred (MCmpOp cmp e1 e2) csq alt =
+    pure $ AIf cmp e1 e2 csq alt
+  ecPred cond csq alt = do
+    c <- gensym "c"
+    ecAssign c cond (AIf Eq (Name c) (LitBool True) csq alt)
 
 
 selectInstructions :: forall es. (Gensym :> es) => ML -> Eff es [AsmVar]
