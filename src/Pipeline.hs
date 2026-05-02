@@ -13,65 +13,45 @@ import Pre
 import Target.Asm
 import Target.Program
 
-{- | concatenates two MStmt. in order to use it, provide a name for the potential binding.
-along with a callback that accepts the atom that can be used to replace the result of the
-first MStmt.
-
-WARNING: the callback must not use the argument more than once.
-
-if the first MStmt ends in an atomic expression, we call the callback with that atom instead of creating a binding.
--}
-msbind :: MExp -> Text -> (Atom -> MExp) -> MExp
-msbind s t k = flip para s \case
-  MAtomF a -> k a
-  MLetF x (e, _) (_, j) -> MLet x e j
-  e' ->
-    let e = embed $ fmap snd e'
-     in case compareLength (toList e') 1 of
-          LT -> MLet t e (k (Name t))
-          EQ -> e
-          -- i could've chosen the last path by convention because MExpF is a traversable, but that sounds too dangerous
-          GT -> error "msbind: a new constructor with two MExp has been added. i don't know which path to choose"
-
--- | a version of 'msbind' where we always create a binding. this is useful in rcoStmt of Let.
-msbindSimple :: MExp -> Text -> MExp -> MExp
-msbindSimple s t k = flip para s \case
-  MAtomF a -> MLet t (MAtom a) k
-  MLetF x (e, _) (_, j) -> MLet x e j
-  e' ->
-    let e = embed $ fmap snd e'
-     in case compareLength (toList e') 1 of
-          LT -> MLet t e k
-          EQ -> e
-          GT -> error "msbind: a new constructor with two MExp has been added. i don't know which path to choose"
-
--- >>> msbindSimple (MBinOp Add (LitInt 1) (LitInt 2)) "x" (MBinOp Add "x" (LitInt 3))
--- MLet "x" (MBinOp Add (LitInt 1) (LitInt 2)) (MBinOp Add (Name "x") (LitInt 3))
+-- | simplifies the tree by removing the @And@ and @Or@ operators.
+shrink :: L -> L
+shrink (Module ss) = Module $ flip ana ss \case
+  If (BinOp And e1 e2) csq alt -> IfF (If e1 e2 (lbool False)) csq alt
+  If (BinOp Or e1 e2) csq alt -> IfF (If e1 (lbool True) e2) csq alt
+  x -> project x
 
 removeComplexOperands :: forall es. (Gensym :> es) => L -> Eff es ML
-removeComplexOperands (Module ss) =
-  MModule <$> flip cata ss \case
-    AtomF x -> pure $ MAtom x
-    InputIntF -> pure MInputInt
-    UnaryOpF op e -> do
-      (t, m) <- liftA2 (,) (gensym "t") e
-      pure $ msbind m t $ \a -> MUnaryOp op a
-    BinOpF op e1 e2 -> do
-      (t1, m1) <- liftA2 (,) (gensym "t") e1
-      (t2, m2) <- liftA2 (,) (gensym "t") e2
-      pure $ msbind m1 t1 \a1 -> msbind m2 t2 $ \a2 -> MBinOp op a1 a2
-    CmpOpF op e1 e2 -> do
-      (t1, m1) <- liftA2 (,) (gensym "t") e1
-      (t2, m2) <- liftA2 (,) (gensym "t") e2
-      pure $ msbind m1 t1 \a1 -> msbind m2 t2 $ \a2 -> MCmpOp op a1 a2
-    PrintF e k -> do
-      (t, me) <- liftA2 (,) (gensym "t") e
-      mk <- k
-      pure $ msbind me t $ \ae -> MPrint ae mk
-    -- no need to flatten Let
-    LetF x e k -> MLet x <$> e <*> k
-    IfF cond csq alt -> do
-      pure undefined
+removeComplexOperands (Module ss) = MModule <$> rco ss
+ where
+  rco = \case
+    Atom x -> pure $ MAtom x
+    InputInt -> pure MInputInt
+    UnaryOp op e -> do
+      (t, m) <- liftA2 (,) (gensym "t") (rco e)
+      pure $ MLet t m (MUnaryOp op (Name t))
+    BinOp op e1 e2 -> do
+      (t1, m1) <- liftA2 (,) (gensym "t") (rco e1)
+      (t2, m2) <- liftA2 (,) (gensym "t") (rco e2)
+      pure $ MLet t1 m1 (MLet t2 m2 (MBinOp op (Name t1) (Name t2)))
+    CmpOp op e1 e2 -> do
+      (t1, m1) <- liftA2 (,) (gensym "t") (rco e1)
+      (t2, m2) <- liftA2 (,) (gensym "t") (rco e2)
+      pure $ MLet t1 m1 (MLet t2 m2 (MCmpOp op (Name t1) (Name t2)))
+    Print e k -> do
+      (t, me) <- liftA2 (,) (gensym "t") (rco e)
+      mk <- rco k
+      pure $ MLet t me (MPrint (Name t) mk)
+    Let x e k -> MLet x <$> rco e <*> rco k
+    If (CmpOp op e1 e2) csq alt -> do
+      (t1, m1) <- liftA2 (,) (gensym "t") (rco e1)
+      (t2, m2) <- liftA2 (,) (gensym "t") (rco e2)
+      MLet t1 m1 . MLet t2 m2 <$> (MIf (MCmpOp op (Name t1) (Name t2)) <$> rco csq <*> rco alt)
+    If cond csq alt ->
+      MIf <$> rco cond <*> rco csq <*> rco alt
+
+
+
+
 
 selectInstructions :: forall es. (Gensym :> es) => ML -> Eff es [AsmVar]
 selectInstructions (MModule ss) = fmap reverse $ execState [] $ siStmt ss
@@ -143,6 +123,7 @@ selectInstructions (MModule ss) = fmap reverse $ execState [] $ siStmt ss
     MUnaryOp{} -> res
     MBinOp{} -> res
     MCmpOp{} -> res
+    _ -> error "todo"
    where
     res = do
       t <- gensym "t"

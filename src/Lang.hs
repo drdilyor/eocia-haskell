@@ -251,6 +251,7 @@ data MExp
   | MCmpOp CmpOp Atom Atom
   | MLet Text MExp MExp
   | MPrint Atom MExp
+  | MIf MExp MExp MExp
   deriving (Eq, Show, Read)
 
 instance IsString MExp where
@@ -268,19 +269,20 @@ mlbool = Atom . LitBool
 type Label = Text
 
 data A = A
-  { blocks :: Map.HashMap Label AStmt
+  { root :: Label
+  , blocks :: Map.HashMap Label AStmt
   }
   deriving (Eq, Show, Read)
 
 data AStmt
-  = Expr AExpr AStmt
-  | Assign Text AExpr AStmt
-  | Return Exp
+  = Expr AExp AStmt
+  | Assign Text AExp AStmt
+  | Return AExp
   | Goto Label
   | AIf CmpOp Atom Atom Label Label
   deriving (Eq, Show, Read)
 
-data AExpr
+data AExp
   = AAtom Atom
   | AInputInt
   | AUnaryOp UnaryOp Atom
@@ -288,3 +290,7 @@ data AExpr
   | ACmpOp CmpOp Atom Atom
   | APrint Atom
   deriving (Eq, Show, Read)
+
+makeBaseFunctor ''A
+makeBaseFunctor ''AStmt
+makeBaseFunctor ''AExp
