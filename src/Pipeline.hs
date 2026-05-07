@@ -1,4 +1,5 @@
 {- HLINT ignore "Evaluate" -}
+{-# OPTIONS_GHC -Wno-name-shadowing #-}
 module Pipeline where
 
 import Data.Foldable
@@ -28,26 +29,32 @@ removeComplexOperands (Module ss) = MModule <$> rco ss
     InputInt -> pure MInputInt
     UnaryOp op e -> do
       (t, m) <- liftA2 (,) (gensym "t") (rco e)
-      pure $ MLet t m (MUnaryOp op (Name t))
+      pure $ inlineAtom t m \m -> MUnaryOp op m
     BinOp op e1 e2 -> do
       (t1, m1) <- liftA2 (,) (gensym "t") (rco e1)
       (t2, m2) <- liftA2 (,) (gensym "t") (rco e2)
-      pure $ MLet t1 m1 (MLet t2 m2 (MBinOp op (Name t1) (Name t2)))
+      pure $ inlineAtom t1 m1 \m1 -> inlineAtom t2 m2 \m2 -> MBinOp op m1 m2
     CmpOp op e1 e2 -> do
       (t1, m1) <- liftA2 (,) (gensym "t") (rco e1)
       (t2, m2) <- liftA2 (,) (gensym "t") (rco e2)
-      pure $ MLet t1 m1 (MLet t2 m2 (MCmpOp op (Name t1) (Name t2)))
+      pure $ inlineAtom t1 m1 \m1 -> inlineAtom t2 m2 \m2 -> MCmpOp op m1 m2
     Print e k -> do
       (t, me) <- liftA2 (,) (gensym "t") (rco e)
       mk <- rco k
-      pure $ MLet t me (MPrint (Name t) mk)
+      pure $ inlineAtom t me \me -> MPrint me mk
     Let x e k -> MLet x <$> rco e <*> rco k
     If (CmpOp op e1 e2) csq alt -> do
       (t1, m1) <- liftA2 (,) (gensym "t") (rco e1)
       (t2, m2) <- liftA2 (,) (gensym "t") (rco e2)
-      MLet t1 m1 . MLet t2 m2 <$> (MIf (MCmpOp op (Name t1) (Name t2)) <$> rco csq <*> rco alt)
+      csq' <- rco csq
+      alt' <- rco alt
+      pure $ inlineAtom t1 m1 \m1 -> inlineAtom t2 m2 \m2 -> MIf (MCmpOp op m1 m2) csq' alt'
     If cond csq alt ->
       MIf <$> rco cond <*> rco csq <*> rco alt
+
+  inlineAtom :: Text -> MExp -> (Atom -> MExp) -> MExp
+  inlineAtom _ (MAtom atom) k = k atom
+  inlineAtom t e k = MLet t e (k (Name t))
 
 explicateControl :: forall es. (Gensym :> es) => ML -> Eff es A
 explicateControl (MModule ss) = do
