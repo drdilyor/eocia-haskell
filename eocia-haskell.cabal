@@ -42,6 +42,7 @@ common common-settings
                     , vector
                     , free
                     , hashable
+                    , pretty-simple
     default-language: GHC2024
 
 library
