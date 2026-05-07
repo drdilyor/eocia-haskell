@@ -3,6 +3,7 @@ module Target.Asm where
 import Data.Hashable
 import Data.Ix
 import Data.Kind
+import Data.Text qualified as T
 import Pre
 
 data Argtype = Src | Dst deriving (Eq, Show, Read)
@@ -17,7 +18,12 @@ data AsmB v
   | Andq  (Arg Dst v) (Arg Src v)
   | Orq   (Arg Dst v) (Arg Src v)
   | Xorq  (Arg Dst v) (Arg Src v)
+  | Cmpq  (Arg Src v) (Arg Src v)
   | Movq  (Arg Dst v) (Arg Src v)
+  | Movzbqal (Arg Dst v)
+  | Setal Cc
+  | Jc    Cc Text
+  | Jmp      Text
   | Pushq (Arg Src v)
   | Popq  (Arg Dst v)
   | Callq Text
@@ -29,6 +35,9 @@ type AsmVar = AsmB Avar
 
 deriving instance Read Asm
 deriving instance Read AsmVar
+
+data Cc = Ce | Cne | Cl | Cle | Cg | Cge
+  deriving (Eq, Show, Read)
 
 type Arg :: Argtype -> Vartype -> Type
 data Arg atype vartype where
@@ -109,11 +118,19 @@ printAsm = unlines . map each
     Andq a b -> "and " <> printArg a <> ", " <> printArg b
     Orq a b -> "or " <> printArg a <> ", " <> printArg b
     Xorq a b -> "xor " <> printArg a <> ", " <> printArg b
+    Cmpq a b -> "cmpq " <> printArg a <> ", " <> printArg b
     Movq a b -> "mov " <> printArg a <> ", " <> printArg b
+    Movzbqal a -> "movzbq " <> printArg a <> ", al"
+    Setal c -> "set" <> printCc c <> " al"
+    Jc c label -> "j" <> printCc c <> " " <> label
+    Jmp label -> "jmp " <> label
     Pushq b -> "push " <> printArg b
     Popq a -> "pop " <> printArg a
     Callq n -> "call " <> n
     Retq -> "ret"
+
+printCc :: Cc -> Text
+printCc = fromJust . T.stripPrefix "C" . show
 
 printArg :: Arg a v -> Text
 printArg (Imm x) = show x
@@ -197,3 +214,4 @@ instance Read (Arg Dst Avar) where
           r <- step readPrec
           pure (Deref i r)
       ]
+  

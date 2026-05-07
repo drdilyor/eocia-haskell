@@ -59,7 +59,7 @@ removeComplexOperands (Module ss) = MModule <$> rco ss
 explicateControl :: forall es. (Gensym :> es) => ML -> Eff es A
 explicateControl (MModule ss) = do
   (root, blocks) <- runState Map.empty $ mkBlock =<< ecTail ss
-  pure $ A {root, blocks}
+  pure $ Cfg {root, blocks}
  where
   mkBlock :: AStmt -> Eff (State (Map.HashMap Label AStmt) : es) Label
   mkBlock (Goto label) =
@@ -120,8 +120,8 @@ explicateControl (MModule ss) = do
     c <- gensym "c"
     ecAssign c cond (AIf Eq (Name c) (LitBool True) csq alt)
 
-selectInstructions :: forall es. (Gensym :> es) => ML -> Eff es [AsmVar]
-selectInstructions (MModule ss) = fmap reverse $ execState [] $ siStmt ss
+selectInstructions :: forall es. (Gensym :> es) => AStmt -> Eff es  [AsmVar]
+selectInstructions ss = fmap reverse $ execState [] $ siStmt ss
  where
   emit :: [AsmVar] -> Eff (State [AsmVar] : es) ()
   emit x = modify (reverse x <>)
@@ -137,12 +137,16 @@ selectInstructions (MModule ss) = fmap reverse $ execState [] $ siStmt ss
   siBinOp Or = Orq
   siUnaryOp USub = Negq
   siUnaryOp Not = \dst -> Xorq dst (Imm 1)
+  siCmpOp Eq = Ce
+  siCmpOp Neq = Cne
+  siCmpOp Lt = Cl
+  siCmpOp Le = Cle
 
-
-  siStmt (MLet x (MAtom y) k) = do
+  siStmt (Expr e k) = gensym "t" >>= \t -> siStmt (Assign t e k)
+  siStmt (Assign x (AAtom y) k) = do
     emit [Movq (Var x) (siArg y)]
     siStmt k
-  siStmt (MLet x (MBinOp op (Name y) (Name z)) k)
+  siStmt (Assign x (ABinOp op (Name y) (Name z)) k)
     | x == y = do
         emit [siBinOp op (Var x) (Var z)]
         siStmt k
@@ -154,49 +158,54 @@ selectInstructions (MModule ss) = fmap reverse $ execState [] $ siStmt ss
           , Movq (Var x) (Var t)
           ]
         siStmt k
-  siStmt (MLet x (MBinOp op y z) k) = do
+  siStmt (Assign x (ABinOp op y z) k) = do
     emit
       [ Movq (Var x) (siArg y)
       , siBinOp op (Var x) (siArg z)
       ]
     siStmt k
-  siStmt (MLet x (MCmpOp op y z) k) = error "TODOO" x op y z k
-  siStmt (MLet x (MUnaryOp op (Name y)) k)
+  siStmt (Assign x (ACmpOp op y z) k) = do
+    emit
+      [ Cmpq (siArg y) (siArg z)
+      , Setal (siCmpOp op)
+      , Movzbqal (Var x)
+      ]
+    siStmt k
+  siStmt (Assign x (AUnaryOp op (Name y)) k)
     | x == y = do
         emit [siUnaryOp op (Var x)]
         siStmt k
-  siStmt (MLet x (MUnaryOp op y) k) = do
+  siStmt (Assign x (AUnaryOp op y) k) = do
     emit
       [ Movq (Var x) (siArg y)
       , siUnaryOp op (Var x)
       ]
     siStmt k
-  siStmt (MLet x MInputInt k) = do
+  siStmt (Assign x AInputInt k) = do
     emit
       [ Callq "input_int"
       , Movq (Var x) rax
       ]
     siStmt k
-  siStmt (MPrint e k) = do
+  siStmt (Assign _ (APrint e) k) = do
     emit
       [ Movq rdi (siArg e)
       , Callq "print_int"
       ]
     siStmt k
-  siStmt (MLet _ MLet{} _) = error "TODOO: not ANF"
-  siStmt (MLet _ MPrint{} _) = error "TODOO: not ANF"
-  siStmt (MAtom x) =
-    emit [Movq rax (siArg x)]
-  siStmt e = case e of
-    MInputInt -> res
-    MUnaryOp{} -> res
-    MBinOp{} -> res
-    MCmpOp{} -> res
-    _ -> error "todo"
-   where
-    res = do
-      t <- gensym "t"
-      siStmt (MLet t e (MAtom (Name t)))
+
+  siStmt (AIf op e1 e2 csq alt) = do
+    emit
+      [ Cmpq (siArg e1) (siArg e2)
+      , Jc (siCmpOp op) csq
+      , Jmp alt
+      ]
+  siStmt (Return e) = do
+    emit
+      [ Movq (Reg Rax) (siArg e)
+      ]
+  siStmt (Goto label) = do
+    emit [ Jmp label ]
 
 data StackFrame = StackFrame
   { offsets :: Map.HashMap Text Int
@@ -212,12 +221,17 @@ assignHomes asmvar = mdo
  where
   instruction :: AsmVar -> Eff (State StackFrame : es) Asm
   instruction (Movq a b) = Movq <$> argument a <*> argument b
+  instruction (Movzbqal a) = Movzbqal <$> argument a
   instruction (Addq a b) = Addq <$> argument a <*> argument b
   instruction (Subq a b) = Subq <$> argument a <*> argument b
   instruction (Negq a) = Negq <$> argument a
   instruction (Andq a b) = Andq <$> argument a <*> argument b
   instruction (Orq a b) = Orq <$> argument a <*> argument b
   instruction (Xorq a b) = Xorq <$> argument a <*> argument b
+  instruction (Cmpq a b) = Cmpq <$> argument a <*> argument b
+  instruction (Jc c label) = pure $ Jc c label
+  instruction (Jmp label) = pure $ Jmp label
+  instruction (Setal c) = pure $ Setal c
   instruction (Callq x) = pure $ Callq x
   instruction (Pushq a) = Pushq <$> argument a
   instruction (Popq a) = Popq <$> argument a
@@ -261,12 +275,17 @@ arg = Set.fromList . maybeToList . arg'
 
 write :: AsmVar -> Set.HashSet LivenessItem
 write (Movq a _) = arg a
+write (Movzbqal a) = arg a
 write (Addq a _) = arg a
 write (Subq a _) = arg a
 write (Negq a) = arg a
 write (Andq a _) = arg a
 write (Orq a _) = arg a
 write (Xorq a _) = arg a
+write (Cmpq _ _) = mempty
+write (Setal _) = Set.singleton (Left Rax)
+write (Jc _ _) = mempty
+write (Jmp _) = mempty  -- ?
 write (Pushq _) = mempty
 write (Popq a) = arg a
 write (Callq _) = Set.fromList $ Left <$> returnRegs
@@ -274,12 +293,17 @@ write Retq = mempty
 
 read' :: AsmVar -> Set.HashSet LivenessItem
 read' (Movq _ b) = arg b
+read' (Movzbqal _) = Set.singleton (Left Rax)
 read' (Addq a b) = arg a <> arg b
 read' (Subq a b) = arg a <> arg b
 read' (Negq a) = arg a
 read' (Andq a b) = arg a <> arg b
 read' (Orq a b) = arg a <> arg b
 read' (Xorq a b) = arg a <> arg b
+read' (Cmpq a b) = arg a <> arg b
+read' (Setal _) = mempty
+read' (Jc _ _) = mempty
+read' (Jmp _) = mempty
 read' (Pushq a) = arg a
 read' (Popq _) = mempty
 read' (Callq "input_int") = Set.empty
@@ -371,12 +395,17 @@ assignRegisters asm =
       eachArg (Imm x) = Imm x
    in flip map asm \case
         Movq a b -> Movq (eachArg a) (eachArg b)
+        Movzbqal a -> Movzbqal (eachArg a)
         Addq a b -> Addq (eachArg a) (eachArg b)
         Subq a b -> Subq (eachArg a) (eachArg b)
         Negq a -> Negq (eachArg a)
         Andq a b -> Andq (eachArg a) (eachArg b)
         Orq a b -> Orq (eachArg a) (eachArg b)
         Xorq a b -> Xorq (eachArg a) (eachArg b)
+        Cmpq a b -> Cmpq (eachArg a) (eachArg b)
+        Setal c -> Setal c
+        Jc c label -> Jc c label
+        Jmp label -> Jmp label
         Pushq a -> Pushq (eachArg a)
         Popq a -> Popq (eachArg a)
         Callq x -> Callq x
@@ -384,7 +413,7 @@ assignRegisters asm =
 
 patchInstructions :: [Asm] -> [Asm]
 patchInstructions =
-  let patch2 :: (Arg Dst Aint -> Arg Src Aint -> Asm) -> Arg Dst Aint -> Arg Src Aint -> [Asm]
+  let patch2 :: (Arg a Aint -> Arg b Aint -> Asm) -> Arg a Aint -> Arg b Aint -> [Asm]
       patch2 inst (Deref a x) (Deref b y) =
         [ Movq (Reg Rax) (Deref b y)
         , inst (Deref a x) (Reg Rax)
@@ -400,14 +429,25 @@ patchInstructions =
             , inst (Reg Rax)
             ]
       patchImm f x = [f x]
+
+      patchCmpq :: Arg Src Aint -> Arg Src Aint -> [Asm]
+      patchCmpq a (Imm x) =
+        [ Movq (Reg Rax) (Imm x)
+        ] <> patch2 Cmpq a (Reg Rax)
+      patchCmpq a b = [Cmpq a b]
    in concatMap \case
         Movq a b -> patch2 Movq a b
+        Movzbqal a -> [Movzbqal a]
         Addq a b -> patch2 Addq a b
         Subq a b -> patch2 Subq a b
         Negq a -> [Negq a]
         Andq a b -> patch2 Andq a b
         Orq a b -> patch2 Orq a b
         Xorq a b -> patch2 Xorq a b
+        Cmpq a b -> patchCmpq a b
+        Setal c -> [Setal c]
+        Jc c label -> [Jc c label]
+        Jmp label -> [Jmp label]
         Callq x -> [Callq x]
         Pushq a -> patchImm Pushq a
         Popq a -> [Popq a]
@@ -435,6 +475,8 @@ preludeAndConclusion (fs, asm) =
 compile :: L -> Either TypeCheckerError Program
 compile l = runPureEff . runErrorNoCallStack @TypeCheckerError . runGensym $ do
   ml <- removeComplexOperands l
-  asmvar <- selectInstructions ml
-  (size, asm) <- assignHomes asmvar
-  pure $ preludeAndConclusion (size, patchInstructions asm)
+  anf <- explicateControl ml
+  asmvar <- traverse selectInstructions anf
+  _ <- traverse assignHomes asmvar
+  -- pure $ preludeAndConclusion (size, patchInstructions asm)
+  pure (error "TODO")

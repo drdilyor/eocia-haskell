@@ -268,11 +268,13 @@ mlbool = Atom . LitBool
 
 type Label = Text
 
-data A = A
+data Cfg a = Cfg
   { root :: Label
-  , blocks :: Map.HashMap Label AStmt
+  , blocks :: Map.HashMap Label a
   }
-  deriving (Eq, Show, Read)
+  deriving (Eq, Show, Read, Functor, Foldable, Traversable)
+
+type A = Cfg AStmt
 
 data AStmt
   = Expr AExp AStmt  -- this should be removed in the future, when print becomes a function
@@ -291,6 +293,4 @@ data AExp
   | APrint Atom
   deriving (Eq, Show, Read)
 
-makeBaseFunctor ''A
 makeBaseFunctor ''AStmt
-makeBaseFunctor ''AExp

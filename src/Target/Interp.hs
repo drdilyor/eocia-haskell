@@ -25,6 +25,7 @@ data InterpAsmState = InterpAsmState
   , mem :: Map.HashMap Int Int
   , vars :: Map.HashMap Text Int
   , pc :: Int
+  , flags :: Ordering
   }
   deriving (Show)
 
@@ -47,6 +48,7 @@ interpAsmB blocks start = do
           , mem = Map.fromList [(1000000, -1)] -- return address to halt
           , vars = Map.empty
           , pc = fromMaybe 0 (Map.lookup start labels)
+          , flags = EQ
           }
   evalState initState (execute asms labels)
 
@@ -102,6 +104,48 @@ execute asms labels = do
           vSrc <- evalArg src
           writeArg dst vSrc
           execute asms labels
+        Cmpq src1 src2 -> do
+          v1 <- evalArg src1
+          v2 <- evalArg src2
+          modify $ \s -> s{flags = compare v1 v2}
+          execute asms labels
+        Setal cc -> do
+          f <- gets (.flags)
+          let b = case cc of
+                Ce -> f == EQ
+                Cne -> f /= EQ
+                Cl -> f == LT
+                Cle -> f == LT || f == EQ
+                Cg -> f == GT
+                Cge -> f == GT || f == EQ
+          setReg Rax (if b then 1 else 0)
+          execute asms labels
+        Movzbqal dst -> do
+          vRax <- getReg Rax
+          writeArg dst (vRax .&. 0xFF)
+          execute asms labels
+        Jc cc label -> do
+          f <- gets (.flags)
+          let b = case cc of
+                Ce -> f == EQ
+                Cne -> f /= EQ
+                Cl -> f == LT
+                Cle -> f == LT || f == EQ
+                Cg -> f == GT
+                Cge -> f == GT || f == EQ
+          if b
+            then case Map.lookup label labels of
+              Just target -> do
+                modify $ \s -> s{pc = target}
+                execute asms labels
+              Nothing -> throwError $ UnknownLabel label
+            else execute asms labels
+        Jmp label -> do
+          case Map.lookup label labels of
+            Just target -> do
+              modify $ \s -> s{pc = target}
+              execute asms labels
+            Nothing -> throwError $ UnknownLabel label
         Pushq src -> do
           val <- evalArg src
           rspVal <- getReg Rsp
