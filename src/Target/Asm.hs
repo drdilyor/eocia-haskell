@@ -14,6 +14,9 @@ data AsmB v
   = Addq  (Arg Dst v) (Arg Src v)
   | Subq  (Arg Dst v) (Arg Src v)
   | Negq  (Arg Dst v)
+  | Andq  (Arg Dst v) (Arg Src v)
+  | Orq   (Arg Dst v) (Arg Src v)
+  | Xorq  (Arg Dst v) (Arg Src v)
   | Movq  (Arg Dst v) (Arg Src v)
   | Pushq (Arg Src v)
   | Popq  (Arg Dst v)
@@ -103,6 +106,9 @@ printAsm = unlines . map each
     Addq a b -> "add " <> printArg a <> ", " <> printArg b
     Subq a b -> "sub " <> printArg a <> ", " <> printArg b
     Negq a -> "neg " <> printArg a
+    Andq a b -> "and " <> printArg a <> ", " <> printArg b
+    Orq a b -> "or " <> printArg a <> ", " <> printArg b
+    Xorq a b -> "xor " <> printArg a <> ", " <> printArg b
     Movq a b -> "mov " <> printArg a <> ", " <> printArg b
     Pushq b -> "push " <> printArg b
     Popq a -> "pop " <> printArg a

@@ -5,6 +5,7 @@ module Target.Interp (
   InterpAsmError (..),
 ) where
 
+import Data.Bits ((.&.), (.|.), xor)
 import Data.HashMap.Strict qualified as Map
 import Data.Vector qualified as V
 import Effects.Lio
@@ -77,6 +78,21 @@ execute asms labels = do
           vSrc <- evalArg src
           vDst <- evalArg dst
           writeArg dst (vDst - vSrc)
+          execute asms labels
+        Andq dst src -> do
+          vSrc <- evalArg src
+          vDst <- evalArg dst
+          writeArg dst (vDst .&. vSrc)
+          execute asms labels
+        Orq dst src -> do
+          vSrc <- evalArg src
+          vDst <- evalArg dst
+          writeArg dst (vDst .|. vSrc)
+          execute asms labels
+        Xorq dst src -> do
+          vSrc <- evalArg src
+          vDst <- evalArg dst
+          writeArg dst (vDst `xor` vSrc)
           execute asms labels
         Negq dst -> do
           vDst <- evalArg dst

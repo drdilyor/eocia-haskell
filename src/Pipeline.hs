@@ -129,9 +129,11 @@ selectInstructions (MModule ss) = fmap reverse $ execState [] $ siStmt ss
 
   siBinOp Add = Addq
   siBinOp Sub = Subq
-  siBinOp _ = error "TODOO"
+  siBinOp And = Andq
+  siBinOp Or = Orq
   siUnaryOp USub = Negq
-  siUnaryOp _ = error "TODOO"
+  siUnaryOp Not = \dst -> Xorq dst (Imm 1)
+
 
   siStmt (MLet x (MAtom y) k) = do
     emit [Movq (Var x) (siArg y)]
@@ -209,6 +211,9 @@ assignHomes asmvar = mdo
   instruction (Addq a b) = Addq <$> argument a <*> argument b
   instruction (Subq a b) = Subq <$> argument a <*> argument b
   instruction (Negq a) = Negq <$> argument a
+  instruction (Andq a b) = Andq <$> argument a <*> argument b
+  instruction (Orq a b) = Orq <$> argument a <*> argument b
+  instruction (Xorq a b) = Xorq <$> argument a <*> argument b
   instruction (Callq x) = pure $ Callq x
   instruction (Pushq a) = Pushq <$> argument a
   instruction (Popq a) = Popq <$> argument a
@@ -255,6 +260,9 @@ write (Movq a _) = arg a
 write (Addq a _) = arg a
 write (Subq a _) = arg a
 write (Negq a) = arg a
+write (Andq a _) = arg a
+write (Orq a _) = arg a
+write (Xorq a _) = arg a
 write (Pushq _) = mempty
 write (Popq a) = arg a
 write (Callq _) = Set.fromList $ Left <$> returnRegs
@@ -265,6 +273,9 @@ read' (Movq _ b) = arg b
 read' (Addq a b) = arg a <> arg b
 read' (Subq a b) = arg a <> arg b
 read' (Negq a) = arg a
+read' (Andq a b) = arg a <> arg b
+read' (Orq a b) = arg a <> arg b
+read' (Xorq a b) = arg a <> arg b
 read' (Pushq a) = arg a
 read' (Popq _) = mempty
 read' (Callq "input_int") = Set.empty
@@ -359,6 +370,9 @@ assignRegisters asm =
         Addq a b -> Addq (eachArg a) (eachArg b)
         Subq a b -> Subq (eachArg a) (eachArg b)
         Negq a -> Negq (eachArg a)
+        Andq a b -> Andq (eachArg a) (eachArg b)
+        Orq a b -> Orq (eachArg a) (eachArg b)
+        Xorq a b -> Xorq (eachArg a) (eachArg b)
         Pushq a -> Pushq (eachArg a)
         Popq a -> Popq (eachArg a)
         Callq x -> Callq x
@@ -386,8 +400,11 @@ patchInstructions =
         Movq a b -> patch2 Movq a b
         Addq a b -> patch2 Addq a b
         Subq a b -> patch2 Subq a b
-        Callq x -> [Callq x]
         Negq a -> [Negq a]
+        Andq a b -> patch2 Andq a b
+        Orq a b -> patch2 Orq a b
+        Xorq a b -> patch2 Xorq a b
+        Callq x -> [Callq x]
         Pushq a -> patchImm Pushq a
         Popq a -> [Popq a]
         Retq -> [Retq]

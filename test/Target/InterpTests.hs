@@ -105,6 +105,21 @@ arithmeticTests =
         (mkSimpleProg [Movq rax (Imm 10), Subq rax (Imm 20)])
         []
         (Right (-10, []))
+    , testAsm
+        "Andq: bitwise AND"
+        (mkSimpleProg [Movq rax (Imm 12), Movq rbx (Imm 10), Andq rax rbx])
+        []
+        (Right (8, []))
+    , testAsm
+        "Orq: bitwise OR"
+        (mkSimpleProg [Movq rax (Imm 12), Movq rbx (Imm 10), Orq rax rbx])
+        []
+        (Right (14, []))
+    , testAsm
+        "Xorq: bitwise XOR"
+        (mkSimpleProg [Movq rax (Imm 12), Movq rbx (Imm 10), Xorq rax rbx])
+        []
+        (Right (6, []))
     ]
 
 memoryTests :: TestTree
