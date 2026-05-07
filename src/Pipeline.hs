@@ -55,6 +55,8 @@ explicateControl (MModule ss) = do
   pure $ A {root, blocks}
  where
   mkBlock :: AStmt -> Eff (State (Map.HashMap Label AStmt) : es) Label
+  mkBlock (Goto label) =
+    pure label
   mkBlock s = do
     label <- gensym "b"
     modify $ Map.insert label s
@@ -93,10 +95,19 @@ explicateControl (MModule ss) = do
   ecPred :: MExp -> Label -> Label -> Eff (State (Map.HashMap Label AStmt) : es) AStmt
   ecPred (MCmpOp cmp e1 e2) csq alt =
     pure $ AIf cmp e1 e2 csq alt
+  ecPred (MLet t e k) csq alt =
+    ecAssign t e =<< ecPred k csq alt
+  ecPred (MIf cond e1 e2) csq alt = do
+    csq' <- mkBlock =<< ecPred e1 csq alt
+    alt' <- mkBlock =<< ecPred e2 csq alt
+    ecPred cond csq' alt'
+  ecPred (MAtom (LitBool x)) csq alt =
+    case x of
+      True -> pure (Goto csq)
+      False -> pure (Goto alt)
   ecPred cond csq alt = do
     c <- gensym "c"
     ecAssign c cond (AIf Eq (Name c) (LitBool True) csq alt)
-
 
 selectInstructions :: forall es. (Gensym :> es) => ML -> Eff es [AsmVar]
 selectInstructions (MModule ss) = fmap reverse $ execState [] $ siStmt ss
