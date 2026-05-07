@@ -275,9 +275,9 @@ data A = A
   deriving (Eq, Show, Read)
 
 data AStmt
-  = Expr AExp AStmt
+  = Expr AExp AStmt  -- this should be removed in the future, when print becomes a function
   | Assign Text AExp AStmt
-  | Return AExp
+  | Return Atom
   | Goto Label
   | AIf CmpOp Atom Atom Label Label
   deriving (Eq, Show, Read)

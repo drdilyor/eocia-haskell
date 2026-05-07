@@ -87,17 +87,21 @@ explicateControl (MModule ss) = do
 
   ecTail :: MExp -> Eff (State (Map.HashMap Label AStmt) : es) AStmt
   ecTail = \case
-    MAtom x -> pure $ Return (AAtom x)
-    MInputInt -> pure $ Return AInputInt
-    MUnaryOp op x -> pure $ Return (AUnaryOp op x)
-    MBinOp op x1 x2 -> pure $ Return (ABinOp op x1 x2)
-    MCmpOp op x1 x2 -> pure $ Return (ACmpOp op x1 x2)
+    MAtom x -> pure $ Return x
+    MInputInt -> returnify AInputInt
+    MUnaryOp op x -> returnify (AUnaryOp op x)
+    MBinOp op x1 x2 -> returnify (ABinOp op x1 x2)
+    MCmpOp op x1 x2 -> returnify (ACmpOp op x1 x2)
     MLet x e k -> ecAssign x e =<< ecTail k
     MPrint x k -> Expr (APrint x) <$> ecTail k
     MIf cond csq alt -> do
       csq' <- mkBlock =<< ecTail csq
       alt' <- mkBlock =<< ecTail alt
       ecPred cond csq' alt'
+   where
+    returnify e = do
+      t <- gensym "t"
+      pure $ Assign t e (Return (Name t))
 
   ecPred :: MExp -> Label -> Label -> Eff (State (Map.HashMap Label AStmt) : es) AStmt
   ecPred (MCmpOp cmp e1 e2) csq alt =
