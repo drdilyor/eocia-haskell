@@ -21,6 +21,17 @@ shrink (Module ss) = Module $ flip ana ss \case
   If (BinOp Or e1 e2) csq alt -> IfF (If e1 (lbool True) e2) csq alt
   x -> project x
 
+uniquify :: forall es. Gensym :> es => L -> Eff es L
+uniquify (Module ss) = Module <$> cata go ss Set.empty
+ where
+  go :: ExpF (Set.HashSet Text -> Eff es Exp) -> Set.HashSet Text -> Eff es Exp
+  go (LetF x e k) used
+    | x `Set.member` used =
+        -- no need to insert x'
+        Let <$> gensym x <*> e used <*> k used
+    | otherwise = Let x <$> e (Set.insert x used) <*> k (Set.insert x used)
+  go e used = embed <$> traverse ($ used) e
+
 removeComplexOperands :: forall es. (Gensym :> es) => L -> Eff es ML
 removeComplexOperands (Module ss) = MModule <$> rco ss
  where
@@ -504,7 +515,7 @@ preludeAndConclusion fs asm =
 
 compile :: L -> Either TypeCheckerError Program
 compile l = runPureEff . runErrorNoCallStack @TypeCheckerError . runGensym $ do
-  ml <- removeComplexOperands l
+  ml <- removeComplexOperands <=< uniquify . shrink . peL $ l
   anf <- explicateControl ml
   asmvar <- traverse selectInstructions anf
   (size, asm) <- assignHomes (assignRegisters asmvar)
