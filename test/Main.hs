@@ -1,6 +1,7 @@
 module Main (main) where
 
 import Data.HashSet qualified as Set
+import Data.HashMap.Strict qualified as Map
 import Data.Text qualified as T
 import Effects.Gensym
 import Effects.Lio
@@ -208,6 +209,9 @@ rcoTests =
         runPureEff (runGensym (removeComplexOperands program)) @?= expected
     ]
 
+sb :: a -> Cfg a
+sb x = Cfg {root = "b", blocks = Map.fromList [("b", x)]}
+
 siTests :: TestTree
 siTests =
   testGroup
@@ -255,14 +259,14 @@ ulTests =
   testGroup
     "uncoverLive"
     [ testCase "empty program" do
-        uncoverLive [] @?= (Set.empty :| [])
+        uncoverLive (sb []) @?= sb ([], Set.empty :| [])
     , testCase "single move" do
         let program =
               [ Movq (Var "x") (Imm 1)
               , Movq (Var "y") (Var "x")
               ]
             expected = Set.empty :| [Set.singleton (Right "x"), Set.empty]
-        uncoverLive program @?= expected
+        uncoverLive (sb program) @?= sb (program, expected)
     , testCase "complex case" do
         let (program, expected) = unzip
               [ (Movq "v" (Imm 1),  Set.fromList $ Right <$> ["v"])
@@ -279,7 +283,7 @@ ulTests =
               , (Movq rdi "t1",     Set.fromList [Left Rdi])
               , (Callq "print_int", Set.fromList [])
               ]
-        uncoverLive program @?= (Set.empty :| expected)
+        uncoverLive (sb program) @?= sb (program, Set.empty :| expected)
     ]
 
 genInt :: Gen Int
@@ -316,18 +320,24 @@ genAsm = sublistOf ['a' .. 'h'] `suchThat` (not . null) >>= (\vars ->
       genInit = forM vars \v -> (Movq . Var . pack . singleton $ v) <$> genImm
    in concat <$> sequence [genInit, concat <$> listOf1 genInst])
 
+-- TODO: move this somewhere else
+printCfgAsm :: Cfg [Asm] -> Text
+printCfgAsm Cfg{root, blocks} = "root = " <> root <> "\n" <> foldMap doBlock (Map.toList blocks)
+ where
+  doBlock (name, content) = "." <> name <> "\n" <> printAsm content
+
 arTests :: TestTree
 arTests =
   testGroup
     "assignRegister"
     [ testProperty "matches the behaviour of spilling" $
-        forAllShow genAsm (unpack . printAsm) \asm ->
+        forAllShow genAsm (unpack . printAsm) \(sb -> asm) ->
         forAllShow genInput (unpack . show . take 20) \input ->
         let asm1 = runPureEff $ assignHomes (assignRegisters asm)
             asm2 = runPureEff $ assignHomes asm
-            mkProgram = preludeAndConclusion . second patchInstructions
-         in counterexample (unpack . printAsm $ snd asm1) $
-            counterexample (unpack . printAsm $ snd asm2) $
+            mkProgram (fs, asm) = preludeAndConclusion fs (patchInstructions asm)
+         in counterexample (unpack . printCfgAsm $ snd asm1) $
+            counterexample (unpack . printCfgAsm $ snd asm2) $
         let output1 = fmap snd (runInterpAsm (mkProgram asm1) input)
             output2 = fmap snd (runInterpAsm (mkProgram asm2) input)
          in label (unpack $ case output2 of Right _ -> "execution: successful"; Left e -> "execution: failed with " <> show e) $
@@ -347,13 +357,13 @@ ahTests =
               [ Movq (Deref Rbp (-8)) (Imm 0)
               , Movq (Deref Rbp (-16)) (Deref Rbp (-8))
               ]
-        runPureEff (assignHomes program) @?= (16, expected)
+        runPureEff (assignHomes (sb program)) @?= (16, sb expected)
     , testProperty "behaviour is correct" $
         forAllShow genAsm (unpack . printAsm) \asm ->
         forAllShow genInput (unpack . show . take 20) \input ->
-        let asm' = runPureEff $ assignHomes asm
-            mkProgram = preludeAndConclusion . second patchInstructions
-         in counterexample (unpack . ("assignHomes asm = \n" <>) . printAsm $ snd asm') $
+        let asm' = runPureEff $ assignHomes $ sb asm
+            mkProgram (fs, asm) = preludeAndConclusion fs (patchInstructions asm)
+         in counterexample (unpack . ("assignHomes asm = \n" <>) . printCfgAsm $ snd asm') $
             fmap snd (runInterpAsm (mkProgram asm') input) === fmap snd (runInterpAsmVarSimple asm input)
  ]
 
@@ -370,21 +380,21 @@ piTests =
               [ Movq (Deref Rbp 0) (Imm 1)
               , Addq (Reg Rax) (Imm 2)
               ]
-        patchInstructions program @?= expected
+        patchInstructions (sb program) @?= sb expected
     , testCase "patches memory-to-memory mov" do
         let program = [Movq (Deref Rbp (-8)) (Deref Rbp (-16))]
             expected =
               [ Movq (Reg Rax) (Deref Rbp (-16))
               , Movq (Deref Rbp (-8)) (Reg Rax)
               ]
-        patchInstructions program @?= expected
+        patchInstructions (sb program) @?= sb expected
     , testCase "patches memory + big immediate" do
         let program = [Movq (Deref Rbp (-8)) (Deref Rbp (-16))]
             expected =
               [ Movq (Reg Rax) (Deref Rbp (-16))
               , Movq (Deref Rbp (-8)) (Reg Rax)
               ]
-        patchInstructions program @?= expected
+        patchInstructions (sb program) @?= sb expected
     ]
 
 runTypeCheck :: Exp -> Either TypeCheckerError ()
