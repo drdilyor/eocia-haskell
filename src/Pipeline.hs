@@ -278,7 +278,7 @@ buildInterferenceGraph :: Cfg ([AsmVar], LivenessTrace) -> Set.HashSet (Liveness
 
     topsort :: Label -> [Label]
     topsort v | Nothing <- blocks Map.!? v = []
-    topsort v = foldl1' (\a b -> nubOrd (a <> b)) (map topsort $ jumps $ blocks Map.! v)
+    topsort v = v : foldl' (\a b -> nubOrd (a <> b)) [] (map topsort $ jumps $ blocks Map.! v)
     jumps =
       nubOrd . foldMap \case
         Jmp label -> [label]
