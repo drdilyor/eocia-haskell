@@ -46,9 +46,9 @@ pterm =
         <*> (symbol "if" *> pexp)
         <*> (symbol "then" *> pexp)
         <*> (symbol "else" *> pexp)
-    , Atom . Name <$> pname
     , Atom . LitInt <$> pint
     , Atom . LitBool <$> pbool
+    , Atom . Name <$> pname
     ]
 
 pexp :: Parser Exp

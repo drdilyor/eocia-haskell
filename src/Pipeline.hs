@@ -488,6 +488,7 @@ preludeAndConclusion fs asm =
             [ Pushq rbp
             , Movq rbp rsp
             , Subq rsp (Imm $ ((fs + 15) `div` 16) * 16)
+            , Jmp asm.root
             ]
         ] <> linearizedBlocks <> [
           ("main_conclusion",)
